@@ -1,0 +1,55 @@
+{
+  "name": "ReadState",
+  "type": "object",
+  "properties": {
+    "user_id": {
+      "type": "string",
+      "description": "The member this reading position belongs to"
+    },
+    "scope": {
+      "type": "string",
+      "enum": [
+        "channel",
+        "direct"
+      ],
+      "description": "Whether this is a group channel or a private conversation"
+    },
+    "target_id": {
+      "type": "string",
+      "description": "The channel id, or the other member's user id for a private conversation"
+    },
+    "last_read_at": {
+      "type": "string",
+      "format": "date-time",
+      "description": "Everything posted after this moment counts as unread"
+    }
+  },
+  "required": [
+    "user_id",
+    "scope",
+    "target_id"
+  ],
+  "rls": {
+    "read": {
+      "$or": [
+        {
+          "data.user_id": "{{user.id}}"
+        },
+        {
+          "user_condition": {
+            "role": "admin"
+          }
+        }
+      ]
+    },
+    "create": {
+      "data.user_id": "{{user.id}}"
+    },
+    "update": {
+      "data.user_id": "{{user.id}}"
+    },
+    "delete": {
+      "data.user_id": "{{user.id}}"
+    }
+  }
+}

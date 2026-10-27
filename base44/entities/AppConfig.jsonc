@@ -1,0 +1,35 @@
+{
+  "name": "AppConfig",
+  "type": "object",
+  "properties": {
+    "join_code": {
+      "type": "string",
+      "description": "The code a friend needs to get into the chat"
+    }
+  },
+  "required": [
+    "join_code"
+  ],
+  "rls": {
+    "read": {
+      "user_condition": {
+        "role": "admin"
+      }
+    },
+    "create": {
+      "user_condition": {
+        "role": "admin"
+      }
+    },
+    "update": {
+      "user_condition": {
+        "role": "admin"
+      }
+    },
+    "delete": {
+      "user_condition": {
+        "role": "admin"
+      }
+    }
+  }
+}

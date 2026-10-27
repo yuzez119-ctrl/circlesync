@@ -1,0 +1,70 @@
+{
+  "name": "MemberName",
+  "type": "object",
+  "properties": {
+    "user_id": {
+      "type": "string",
+      "description": "The member this custom name belongs to"
+    },
+    "display_name": {
+      "type": "string",
+      "description": "The name shown in the chat instead of the name from their account"
+    }
+  },
+  "required": [
+    "user_id",
+    "display_name"
+  ],
+  "rls": {
+    "read": {
+      "$or": [
+        {
+          "user_condition": {
+            "role": "admin"
+          }
+        },
+        {
+          "user_condition": {
+            "role": "user"
+          }
+        }
+      ]
+    },
+    "create": {
+      "$or": [
+        {
+          "data.user_id": "{{user.id}}"
+        },
+        {
+          "user_condition": {
+            "role": "admin"
+          }
+        }
+      ]
+    },
+    "update": {
+      "$or": [
+        {
+          "data.user_id": "{{user.id}}"
+        },
+        {
+          "user_condition": {
+            "role": "admin"
+          }
+        }
+      ]
+    },
+    "delete": {
+      "$or": [
+        {
+          "data.user_id": "{{user.id}}"
+        },
+        {
+          "user_condition": {
+            "role": "admin"
+          }
+        }
+      ]
+    }
+  }
+}

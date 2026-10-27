@@ -1,0 +1,74 @@
+{
+  "name": "DirectMessage",
+  "type": "object",
+  "properties": {
+    "sender_id": {
+      "type": "string"
+    },
+    "sender_name": {
+      "type": "string"
+    },
+    "sender_title_id": {
+      "type": "string"
+    },
+    "recipient_id": {
+      "type": "string"
+    },
+    "recipient_name": {
+      "type": "string"
+    },
+    "body": {
+      "type": "string"
+    },
+    "attachments": {
+      "type": "array",
+      "description": "Files shared in this private message",
+      "items": {
+        "type": "object",
+        "properties": {
+          "file_uri": {
+            "type": "string"
+          },
+          "file_name": {
+            "type": "string"
+          },
+          "file_type": {
+            "type": "string"
+          },
+          "file_size": {
+            "type": "number"
+          },
+          "kind": {
+            "type": "string"
+          }
+        }
+      }
+    }
+  },
+  "required": [
+    "sender_id",
+    "recipient_id",
+    "body"
+  ],
+  "rls": {
+    "read": {
+      "$or": [
+        {
+          "data.sender_id": "{{user.id}}"
+        },
+        {
+          "data.recipient_id": "{{user.id}}"
+        }
+      ]
+    },
+    "create": {
+      "data.sender_id": "{{user.id}}"
+    },
+    "update": {
+      "data.sender_id": "{{user.id}}"
+    },
+    "delete": {
+      "data.sender_id": "{{user.id}}"
+    }
+  }
+}
