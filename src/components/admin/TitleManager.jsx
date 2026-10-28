@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Pencil, Plus, Trash2 } from "lucide-react";
-import { base44 } from "@/api/base44Client";
+import { supabase } from "@/api/supabaseClient";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -68,14 +68,16 @@ export default function TitleManager({ titles, isFounder, onChanged }) {
     setNotice("");
     setError("");
     try {
-      const response = await base44.functions.invoke("tierAdmin", {
-        action: "saveTier",
-        id: editing?.id || null,
-        name: name.trim(),
-        color,
-        tier_type: tierType,
+      const { data, error } = await supabase.functions.invoke("tier-admin", {
+        body: {
+          action: "saveTier",
+          id: editing?.id || null,
+          name: name.trim(),
+          color,
+          tier_type: tierType,
+        },
       });
-      const data = response.data || {};
+      if (error) throw error;
       setNotice(
         data.applied
           ? "Tier saved."
@@ -97,11 +99,10 @@ export default function TitleManager({ titles, isFounder, onChanged }) {
     setNotice("");
     setError("");
     try {
-      const response = await base44.functions.invoke("tierAdmin", {
-        action: "deleteTier",
-        id: target.id,
+      const { data, error } = await supabase.functions.invoke("tier-admin", {
+        body: { action: "deleteTier", id: target.id },
       });
-      const data = response.data || {};
+      if (error) throw error;
       if (data.applied) setNotice("Tier deleted.");
       else setNotice("Removing that tier is with the other admins for agreement.");
       if (editing?.id === target.id) cancel();

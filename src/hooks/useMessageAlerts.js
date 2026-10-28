@@ -1,5 +1,5 @@
 import { useEffect, useRef } from "react";
-import { base44 } from "@/api/base44Client";
+import { supabase } from "@/api/supabaseClient";
 import { mentionsMe } from "@/lib/chatUtils";
 
 // Watches incoming messages and hands each new one over the moment it arrives.
@@ -24,16 +24,18 @@ export default function useMessageAlerts({ me, myName, enabled = true, onMessage
       });
     };
 
-    const unsubscribeMessages = base44.entities.Message.subscribe((event) => {
-      if (event.type === "create") check(event.data, "channel");
-    });
-    const unsubscribeDirect = base44.entities.DirectMessage.subscribe((event) => {
-      if (event.type === "create") check(event.data, "direct");
-    });
+    const channel = supabase
+      .channel(`message-alerts:${me.id}`)
+      .on("postgres_changes", { event: "INSERT", schema: "public", table: "messages" }, ({ new: message }) => {
+        check(message, "channel");
+      })
+      .on("postgres_changes", { event: "INSERT", schema: "public", table: "direct_messages" }, ({ new: message }) => {
+        check(message, "direct");
+      })
+      .subscribe();
 
     return () => {
-      unsubscribeMessages();
-      unsubscribeDirect();
+      supabase.removeChannel(channel);
     };
   }, [enabled, me?.id, myName]);
 }

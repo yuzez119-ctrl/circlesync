@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import moment from "moment";
 import { Check, X } from "lucide-react";
-import { base44 } from "@/api/base44Client";
+import { supabase, TABLES } from "@/api/supabaseClient";
 import { Button } from "@/components/ui/button";
 
 export default function ApprovalsPanel({ isFounder }) {
@@ -12,11 +12,10 @@ export default function ApprovalsPanel({ isFounder }) {
   const [error, setError] = useState("");
 
   const load = useCallback(async () => {
-    const { items } = await base44.entities.TierRequest.filter(
-      { status: "pending" },
-      { sort: "-created_date", limit: 100 }
-    );
-    setRequests(items || []);
+    const { data, error } = await supabase.from(TABLES.tierRequests).select("*")
+      .eq("status", "pending").order("created_date", { ascending: false }).limit(100);
+    if (error) throw error;
+    setRequests(data || []);
     setLoading(false);
   }, []);
 
@@ -29,12 +28,14 @@ export default function ApprovalsPanel({ isFounder }) {
     setNotice("");
     setError("");
     try {
-      const response = await base44.functions.invoke("tierAdmin", {
-        action: "resolveRequest",
-        requestId: request.id,
-        decision,
+      const { data, error } = await supabase.functions.invoke("tier-admin", {
+        body: {
+          action: "resolveRequest",
+          requestId: request.id,
+          decision,
+        },
       });
-      const data = response.data || {};
+      if (error) throw error;
       if (data.status === "applied") setNotice("Agreed — the change is now live.");
       else if (data.status === "rejected") setNotice("Turned down.");
       else if (typeof data.waiting === "number")

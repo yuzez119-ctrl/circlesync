@@ -1,67 +1,59 @@
-# Base44 Project
+# CircleSync
 
-Use this repository to run and edit the app locally, then publish changes back through Base44.
+CircleSync is a chat app built with React, Vite, and Supabase.
 
-Any change pushed to the repo will also be reflected in the Base44 Builder.
+## Configure Supabase
 
-## Prerequisites
+1. Create a Supabase project and copy its project URL and publishable (or legacy anon) key into `.env.local`:
 
-1. Clone the repository using the project's Git URL.
-2. Navigate to the project directory.
-3. Install dependencies: `npm install`.
-4. Install the Base44 CLI: `npm install -g base44@latest`.
-5. Install [Deno](https://docs.deno.com/runtime/getting_started/installation/) â the local Base44 backend runs on it.
+	```env
+	VITE_SUPABASE_URL=https://YOUR_PROJECT_ID.supabase.co
+	VITE_SUPABASE_ANON_KEY=YOUR_SUPABASE_PUBLISHABLE_OR_ANON_KEY
+	```
 
-Run `base44 --help` (or see the [CLI reference](https://docs.base44.com/developers/references/cli/commands/introduction)) for the full command surface.
+2. Install the Supabase CLI and link this repository to the project:
+
+	```sh
+	npx supabase login
+	npx supabase link --project-ref YOUR_PROJECT_ID
+	```
+
+3. Apply the database schema and deploy the protected admin function:
+
+	```sh
+	npx supabase db push
+	npx supabase functions deploy tier-admin
+	```
+
+4. In Supabase Auth settings, configure the site URL and redirect URLs for local development and production. Disable email confirmation: accounts use synthetic `@circlesync.internal` addresses that cannot receive verification messages.
+5. Promote the initial owner from the Supabase SQL editor:
+
+	```sql
+	update public.profiles set role = 'founder' where email = 'OWNER_EMAIL';
+	```
+
+New accounts are regular users. A Founder can create a join code from the admin area; invited users enter it to create a chat membership.
 
 ## Run Locally
 
-Three commands, from the project root:
-
-```bash
-base44 login   # one-time per machine
-base44 link    # one-time per clone
-base44 dev     # local backend + frontend together
+```sh
+npm install
+npm run dev
 ```
 
-Open the frontend URL that `base44 dev` prints (typically `http://localhost:5173`).
+Other checks:
 
-Notes:
-
-- **Every fresh clone needs `base44 link`.** It writes `base44/.app.jsonc` (the app-id pointer), which is deliberately gitignored. Your app id is in the Builder URL (`app.base44.com/apps/<id>/...`); `base44 link --help` shows the non-interactive flags.
-- **`base44 dev` runs the frontend for you** (via `site.serveCommand` in this repo's `base44/config.jsonc`) â never run `npm run dev` yourself: alone it serves a UI with no backend behind it (`[base44] Proxy not enabled`, every `/api` call fails), and alongside `base44 dev` the second Vite silently takes the next port and you end up looking at the wrong one.
-- **The app must be published at least once for the UI to load under `base44 dev`.** The frontend boots by fetching app settings from the hosted app; before the first publish that fails and every page redirects to login. The local API works regardless.
-- Entities, functions, and auth run locally â entity data is **in-memory only**, wiped when `base44 dev` restarts. Everything else (Core integrations, OAuth login) is forwarded to your deployed app. Full breakdown: [Local development overview](https://docs.base44.com/developers/backend/overview/local-dev/local-development-overview).
-
-## Frontend Only, Hosted Backend
-
-To work on just the frontend against your app's live hosted backend:
-
-```bash
-base44 dev --remote
+```sh
+npm run lint
+npm run build
 ```
 
-â ï¸ In this mode writes go to your app's **production data** â plain `base44 dev` keeps everything local.
+## Data Migration
 
-## Publish Your Changes
+The SQL migration creates the Supabase schema, row-level security policies, Realtime publication, and private attachment bucket. It does not import existing accounts, messages, channels, memberships, or uploaded files from the previous provider. Existing users need Supabase Auth accounts, and existing application data must be exported and imported separately before switching production traffic.
 
-After pushing your changes to git, open the Base44 dashboard and publish the app:
+For the restored CamelCase Base44 tables, the join-code ambiguity fix is in `supabase/migrations/20261027000004_fix_legacy_join_with_code.sql`. Apply this script in Supabase SQL Editor to replace the legacy RPC. It qualifies the `AppConfig.join_code` column, compares the RPC argument via `$1`, and returns the created `Membership` row. Do not use the lowercase-table RPC migration for this restored CamelCase schema.
 
-```bash
-base44 dashboard open
-```
+Apply `supabase/migrations/20261027000005_join_with_undistributed_tier.sql` to create the `undistributed` Title if missing and assign it to new memberships created through the join-code RPC. Existing memberships are not changed by this migration. To restore Title management in the Admin UI, deploy the Edge Function with `npx supabase functions deploy tier-admin`.
 
-This repo syncs to Base44 through git, so publish from the dashboard rather than `base44 deploy` â a CLI deploy ships your local tree directly, bypassing the sync, and the deployed state silently diverges from the repo.
-
-## Docs & Support
-
-GitHub integration: [https://docs.base44.com/developers/app-code/local-development/github](https://docs.base44.com/developers/app-code/local-development/github)
-
-Local development: [https://docs.base44.com/developers/backend/overview/local-dev/local-development-overview](https://docs.base44.com/developers/backend/overview/local-dev/local-development-overview)
-
-Support: [https://app.base44.com/support](https://app.base44.com/support)
-
-
----
-
-[![Restore to base44](https://img.shields.io/badge/Restore%20to-BASE44-orange?style=for-the-badge&logo=rocket)](https://app.base44.com/apps)
+Supabase free-plan limits and availability are determined by Supabase and may change; review the current plan limits before relying on it for production.

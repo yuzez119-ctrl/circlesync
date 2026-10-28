@@ -94,6 +94,7 @@ export default function ChatPane({
 
       <MessageList
         messages={messages}
+        displayNames={displayNames}
         mentionNames={mentionNames}
         memberTiers={memberTiers}
         currentUserId={currentUserId}

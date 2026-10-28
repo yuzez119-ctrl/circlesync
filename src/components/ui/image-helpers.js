@@ -1,7 +1,4 @@
-const WIX_MEDIA_HOSTS = {
-  "media.base44.com": "/images/public/",
-  "static.wixstatic.com": "/media/",
-}
+const WIX_MEDIA_HOSTS = { "static.wixstatic.com": "/media/" }
 
 export const DEFAULT_TRANSFORM_WIDTH = 1024
 export const IMAGE_LOAD_MODE = {

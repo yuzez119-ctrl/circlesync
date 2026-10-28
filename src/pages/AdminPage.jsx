@@ -74,6 +74,8 @@ export default function AdminPage() {
               titles={titles}
               displayNames={displayNames}
               memberTiers={memberTiers}
+              currentUserId={me.id}
+              isFounder={isFounder}
               onChanged={() => load(false)}
             />
           </TabsContent>

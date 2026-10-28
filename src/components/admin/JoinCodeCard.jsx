@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Check, Copy, RefreshCw } from "lucide-react";
-import { base44 } from "@/api/base44Client";
+import { supabase, TABLES } from "@/api/supabaseClient";
 import { Button } from "@/components/ui/button";
 import { makeJoinCode } from "@/lib/chatUtils";
 
@@ -10,17 +10,20 @@ export default function JoinCodeCard() {
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
-    base44.entities.AppConfig.list().then((list) => setConfig(list[0] || null));
+    supabase.from(TABLES.appConfig).select("*").order("created_date", { ascending: false }).limit(1)
+      .then(({ data }) => setConfig(data?.[0] || null));
   }, []);
 
   const write = async (code) => {
     setBusy(true);
     if (config?.id) {
-      const updated = await base44.entities.AppConfig.update(config.id, { join_code: code });
-      setConfig(updated);
+      const { data, error } = await supabase.from(TABLES.appConfig).update({ join_code: code }).eq("id", config.id).select().single();
+      if (error) throw error;
+      setConfig(data);
     } else {
-      const created = await base44.entities.AppConfig.create({ join_code: code });
-      setConfig(created);
+      const { data, error } = await supabase.from(TABLES.appConfig).insert({ join_code: code }).select().single();
+      if (error) throw error;
+      setConfig(data);
     }
     setBusy(false);
   };

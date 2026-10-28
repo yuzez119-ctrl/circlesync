@@ -12,7 +12,7 @@ const FALLBACK_IMAGE_URL =
 
 /**
  * Image with built-in Wix Media Platform support: canonical public images on
- * media.base44.com and static.wixstatic.com/media are resized to the rendered
+ * static.wixstatic.com/media are resized to the rendered
  * container per device pixel ratio and served as AVIF/WebP when supported; `fittingType="fill"`
  * crops server-side, optionally anchored at a focal point. Other URLs render
  * as a plain <img>. Failed transforms retry the original URL; only a broken
@@ -33,13 +33,7 @@ const Image = React.forwardRef(
     },
     ref
   ) => {
-    const [previewSource, setPreviewSource] = React.useState(null)
-    const preview = previewSource?.source === source ? previewSource : null
-    const src = preview ? preview.value : source
-    const replaceSource = (value, className) => setPreviewSource({
-      source, value, className, sourceClassName: props.className,
-    })
-    React.useEffect(() => setPreviewSource(null), [source])
+    const src = source
     const parsedSource = src && src !== FALLBACK_IMAGE_URL ? parseWixMediaUrl(src) : null
     const initialMode = parsedSource ? IMAGE_LOAD_MODE.OPTIMIZED : IMAGE_LOAD_MODE.ORIGINAL
     const [loadState, setLoadState] = React.useState({ src, mode: initialMode })
@@ -58,7 +52,7 @@ const Image = React.forwardRef(
 
     const imageProps = {
       ...props,
-      className: preview && preview.sourceClassName === props.className ? preview.className : props.className,
+      className: props.className,
       onError: handleError,
     }
 
@@ -96,7 +90,6 @@ const Image = React.forwardRef(
         ref={ref}
         src={src}
         parsed={parsed}
-        onSourceChange={replaceSource}
         fittingType={fittingType}
         focalPoint={focalPoint}
         quality={quality}

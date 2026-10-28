@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { base44 } from "@/api/base44Client";
+import { supabase, TABLES } from "@/api/supabaseClient";
 import useChatData from "@/hooks/useChatData";
 import useUnreadCounts from "@/hooks/useUnreadCounts";
 import useMessageAlerts from "@/hooks/useMessageAlerts";
@@ -26,6 +26,7 @@ export default function ChatPage() {
     channels,
     members,
     displayNames,
+    loadError,
     memberTiers,
     myTiers,
     load,
@@ -64,18 +65,19 @@ export default function ChatPage() {
       return undefined;
     }
     let cancelled = false;
-    base44.entities.Message.filter({ channel_id: activeChannelId }, { sort: "created_date", limit: 200 })
-      .then((page) => { if (!cancelled) setMessages(page.items || []); });
+    supabase.from(TABLES.messages).select("*").eq("channel_id", activeChannelId)
+      .order("created_date", { ascending: true }).limit(200)
+      .then(({ data }) => { if (!cancelled) setMessages(data || []); });
     return () => { cancelled = true; };
   }, [membership, activeChannelId, tick]);
 
   useEffect(() => {
     if (!membership || !me) return undefined;
     let cancelled = false;
-    base44.entities.DirectMessage.filter(
-      { $or: [{ sender_id: me.id }, { recipient_id: me.id }] },
-      { sort: "-created_date", limit: 300 }
-    ).then((page) => { if (!cancelled) setAllDms(page.items || []); });
+    supabase.from(TABLES.directMessages).select("*")
+      .or(`sender_id.eq.${me.id},recipient_id.eq.${me.id}`)
+      .order("created_date", { ascending: false }).limit(300)
+      .then(({ data }) => { if (!cancelled) setAllDms(data || []); });
     return () => { cancelled = true; };
   }, [membership, me, tick]);
 
@@ -85,15 +87,10 @@ export default function ChatPage() {
       return undefined;
     }
     let cancelled = false;
-    base44.entities.DirectMessage.filter(
-      {
-        $or: [
-          { sender_id: me.id, recipient_id: activeThreadId },
-          { sender_id: activeThreadId, recipient_id: me.id },
-        ],
-      },
-      { sort: "created_date", limit: 200 }
-    ).then((page) => { if (!cancelled) setThreadMessages(page.items || []); });
+    supabase.from(TABLES.directMessages).select("*")
+      .or(`and(sender_id.eq.${me.id},recipient_id.eq.${activeThreadId}),and(sender_id.eq.${activeThreadId},recipient_id.eq.${me.id})`)
+      .order("created_date", { ascending: true }).limit(200)
+      .then(({ data }) => { if (!cancelled) setThreadMessages(data || []); });
     return () => { cancelled = true; };
   }, [membership, me, activeThreadId, tick]);
 
@@ -202,13 +199,17 @@ export default function ChatPage() {
 
   // Live updates from everyone else.
   useEffect(() => {
-    const unsubscribeMessages = base44.entities.Message.subscribe(() => setTick((value) => value + 1));
-    const unsubscribeDirect = base44.entities.DirectMessage.subscribe(() => setTick((value) => value + 1));
-    const unsubscribeNames = base44.entities.MemberName.subscribe(() => load(false));
+    const channel = supabase
+      .channel("chat-page-live")
+      .on("postgres_changes", { event: "*", schema: "public", table: TABLES.messages }, () => setTick((value) => value + 1))
+      .on("postgres_changes", { event: "*", schema: "public", table: TABLES.directMessages }, () => setTick((value) => value + 1))
+      .on("postgres_changes", { event: "*", schema: "public", table: TABLES.memberNames }, () => load(false))
+      .on("postgres_changes", { event: "*", schema: "public", table: TABLES.channels }, () => load(false))
+      .on("postgres_changes", { event: "*", schema: "public", table: TABLES.memberships }, () => load(false))
+      .on("postgres_changes", { event: "*", schema: "public", table: TABLES.titles }, () => load(false))
+      .subscribe();
     return () => {
-      unsubscribeMessages();
-      unsubscribeDirect();
-      unsubscribeNames();
+      supabase.removeChannel(channel);
     };
   }, [load]);
 
@@ -218,7 +219,7 @@ export default function ChatPage() {
     if (!membership || !me) return;
     if (activeThreadId) {
       const partner = activeThread?.member;
-      await base44.entities.DirectMessage.create({
+      const { error } = await supabase.from(TABLES.directMessages).insert({
         sender_id: me.id,
         sender_name: myName,
         recipient_id: activeThreadId,
@@ -226,14 +227,16 @@ export default function ChatPage() {
         body,
         attachments,
       });
+      if (error) throw error;
     } else if (activeChannel) {
-      await base44.entities.Message.create({
+      const { error } = await supabase.from(TABLES.messages).insert({
         channel_id: activeChannel.id,
         author_id: me.id,
         author_name: myName,
         body,
         attachments,
       });
+      if (error) throw error;
     }
     refresh();
   };
@@ -265,14 +268,33 @@ export default function ChatPage() {
     );
   }
 
-  if (!me) return null;
+  if (!me) {
+    return (
+      <div className="flex min-h-screen flex-col items-center justify-center gap-3 bg-background px-6 text-center">
+        <p className="text-sm text-muted-foreground">
+          {loadError || "Your account could not be loaded."}
+        </p>
+        <button
+          type="button"
+          onClick={() => load()}
+          className="text-sm font-medium text-primary underline-offset-4 hover:underline"
+        >
+          Try again
+        </button>
+      </div>
+    );
+  }
 
   if (!membership) {
     return (
       <JoinGate
         me={me}
-        onJoined={() => load()}
-        onSignOut={() => base44.auth.logout()}
+        onJoined={async (joinedMembership) => {
+          const membership = await load(false, joinedMembership);
+          if (membership?.channel_id) setActiveChannelId(membership.channel_id);
+          return membership;
+        }}
+        onSignOut={() => supabase.auth.signOut()}
       />
     );
   }
@@ -295,7 +317,7 @@ export default function ChatPage() {
       isAdmin={isAdmin}
       onEditName={() => setNameOpen(true)}
       onOpenAdmin={() => navigate("/admin")}
-      onSignOut={() => base44.auth.logout()}
+      onSignOut={() => supabase.auth.signOut()}
       unreadCounts={unreadCounts}
     />
   );

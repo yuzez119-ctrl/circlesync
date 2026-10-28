@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { base44 } from "@/api/base44Client";
+import { supabase, TABLES } from "@/api/supabaseClient";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
@@ -37,8 +37,10 @@ export default function ChannelDialog({ open, onOpenChange, channel, titles, onS
     if (!name.trim()) return;
     setBusy(true);
     const payload = { name: name.trim(), description: description.trim(), allowed_title_ids: allowed };
-    if (channel?.id) await base44.entities.Channel.update(channel.id, payload);
-    else await base44.entities.Channel.create(payload);
+    const result = channel?.id
+      ? await supabase.from(TABLES.channels).update(payload).eq("id", channel.id)
+      : await supabase.from(TABLES.channels).insert(payload);
+    if (result.error) throw result.error;
     setBusy(false);
     onOpenChange(false);
     onSaved();

@@ -5,13 +5,13 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { displayNameFor } from "@/lib/chatUtils";
+import { displayNameFor, membersWithNames } from "@/lib/chatUtils";
 import { primaryColor } from "@/lib/tiers";
 import MemberAvatar from "./MemberAvatar";
 import TitleBadges from "./TitleBadges";
 
 export default function NewDirectDialog({ open, onOpenChange, members, displayNames, memberTiers, currentUserId, onSelect }) {
-  const others = members.filter((member) => member.user_id !== currentUserId);
+  const others = membersWithNames(members, displayNames, currentUserId).filter((member) => member.user_id !== currentUserId);
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -27,7 +27,7 @@ export default function NewDirectDialog({ open, onOpenChange, members, displayNa
             const name = displayNameFor(displayNames, member.user_id, member.full_name);
             return (
               <button
-                key={member.id}
+                key={member.user_id}
                 onClick={() => onSelect(member.user_id)}
                 className="flex w-full items-center gap-3 rounded-xl px-2 py-2 text-left transition-colors hover:bg-secondary/60"
               >

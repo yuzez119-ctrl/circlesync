@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { base44 } from "@/api/base44Client";
+import { supabase } from "@/api/supabaseClient";
 
 // Private files need a temporary link before they can be shown.
 export default function useSignedUrl(fileUri) {
@@ -12,9 +12,9 @@ export default function useSignedUrl(fileUri) {
     }
     let cancelled = false;
     setUrl(null);
-    base44.integrations.Core.CreateFileSignedUrl({ file_uri: fileUri, expires_in: 3600 })
-      .then((result) => {
-        if (!cancelled) setUrl(result?.signed_url || null);
+    supabase.storage.from("chat-attachments").createSignedUrl(fileUri, 3600)
+      .then(({ data, error }) => {
+        if (!cancelled) setUrl(error ? null : data?.signedUrl || null);
       })
       .catch(() => {
         if (!cancelled) setUrl(null);

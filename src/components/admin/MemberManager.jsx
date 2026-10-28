@@ -1,20 +1,32 @@
 import { useState } from "react";
-import { Pencil } from "lucide-react";
-import { base44 } from "@/api/base44Client";
+import { Pencil, UserRoundX } from "lucide-react";
+import { supabase } from "@/api/supabaseClient";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
-import { displayNameFor } from "@/lib/chatUtils";
+import { displayNameFor, membersWithNames } from "@/lib/chatUtils";
 import { saveMemberName } from "@/lib/memberNames";
 import { primaryColor, tierTypeOf } from "@/lib/tiers";
 import MemberAvatar from "@/components/chat/MemberAvatar";
 import TitleBadges from "@/components/chat/TitleBadges";
 import NameDialog from "@/components/chat/NameDialog";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 
-export default function MemberManager({ members, titles, displayNames, memberTiers, onChanged }) {
+export default function MemberManager({ members, titles, displayNames, memberTiers, currentUserId, isFounder, onChanged }) {
   const [renaming, setRenaming] = useState(null);
+  const [removing, setRemoving] = useState(null);
   const [busyId, setBusyId] = useState(null);
   const [notice, setNotice] = useState("");
   const [error, setError] = useState("");
+  const visibleMembers = membersWithNames(members, displayNames);
 
   const assign = async (member, tierId, on) => {
     const held = member.title_ids || [];
@@ -23,12 +35,14 @@ export default function MemberManager({ members, titles, displayNames, memberTie
     setNotice("");
     setError("");
     try {
-      const response = await base44.functions.invoke("tierAdmin", {
-        action: "assignTiers",
-        targetUserId: member.user_id,
-        tierIds,
+      const { data, error } = await supabase.functions.invoke("tier-admin", {
+        body: {
+          action: "assignTiers",
+          targetUserId: member.user_id,
+          tierIds,
+        },
       });
-      const data = response.data || {};
+      if (error) throw error;
       if (data.applied) setNotice("Tiers updated.");
       else if (data.awaitingFounder)
         setNotice("Sent to the Founder — only a Founder can make someone an admin.");
@@ -46,6 +60,27 @@ export default function MemberManager({ members, titles, displayNames, memberTie
     onChanged();
   };
 
+  const removeMember = async () => {
+    if (!removing) return;
+    setBusyId(removing.id);
+    setNotice("");
+    setError("");
+    try {
+      const { data, error } = await supabase.functions.invoke("tier-admin", {
+        body: { action: "removeMember", targetUserId: removing.user_id },
+      });
+      if (error) throw error;
+      if (!data?.removed) throw new Error("The member was not removed.");
+      setRemoving(null);
+      setNotice("Member removed from the chat.");
+      await onChanged();
+    } catch (err) {
+      setError(err?.message || "That member could not be removed.");
+    } finally {
+      setBusyId(null);
+    }
+  };
+
   return (
     <div className="space-y-4">
       <p className="max-w-2xl text-sm text-muted-foreground">
@@ -59,7 +94,7 @@ export default function MemberManager({ members, titles, displayNames, memberTie
       {error && <p className="text-sm text-destructive">{error}</p>}
 
       <div className="divide-y divide-border overflow-hidden rounded-2xl border border-border bg-card/40">
-        {members.map((member) => {
+        {visibleMembers.map((member) => {
           const tiers = memberTiers?.[member.user_id] || [];
           const name = displayNameFor(displayNames, member.user_id, member.full_name);
           const held = member.title_ids || [];
@@ -73,15 +108,28 @@ export default function MemberManager({ members, titles, displayNames, memberTie
                     <TitleBadges titles={tiers} />
                   </div>
                 </div>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  onClick={() => setRenaming(member)}
-                  aria-label={`Rename ${name}`}
-                  className="h-8 w-8 text-muted-foreground"
-                >
-                  <Pencil className="h-4 w-4" />
-                </Button>
+                <div className="flex items-center">
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    onClick={() => setRenaming(member)}
+                    aria-label={`Rename ${name}`}
+                    className="h-8 w-8 text-muted-foreground"
+                  >
+                    <Pencil className="h-4 w-4" />
+                  </Button>
+                  {isFounder && member.user_id !== currentUserId && (
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      onClick={() => setRemoving(member)}
+                      aria-label={`Remove ${name} from chat`}
+                      className="h-8 w-8 text-destructive"
+                    >
+                      <UserRoundX className="h-4 w-4" />
+                    </Button>
+                  )}
+                </div>
               </div>
 
               <div className="flex flex-wrap gap-x-4 gap-y-2">
@@ -106,7 +154,7 @@ export default function MemberManager({ members, titles, displayNames, memberTie
             </div>
           );
         })}
-        {members.length === 0 && (
+        {visibleMembers.length === 0 && (
           <p className="px-4 py-6 text-center text-sm text-muted-foreground">Nobody has joined yet.</p>
         )}
       </div>
@@ -120,6 +168,23 @@ export default function MemberManager({ members, titles, displayNames, memberTie
         placeholder={renaming?.full_name || "A name"}
         onSave={saveName}
       />
+
+      <AlertDialog open={!!removing} onOpenChange={(open) => !open && setRemoving(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Remove {removing ? displayNameFor(displayNames, removing.user_id, removing.full_name) : "member"}?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This removes their chat membership and display name. Their account and existing messages will remain.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={busyId === removing?.id}>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={removeMember} disabled={busyId === removing?.id}>
+              Remove member
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

@@ -1,16 +1,16 @@
 import React, { useState } from "react";
 import { Link } from "react-router-dom";
-import { base44 } from "@/api/base44Client";
+import { supabase } from "@/api/supabaseClient";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { LogIn, Mail, Lock, Loader2 } from "lucide-react";
+import { LogIn, User, Lock, Loader2 } from "lucide-react";
 import AuthLayout from "@/components/AuthLayout";
-import GoogleIcon from "@/components/GoogleIcon";
 import { safeReturnTo } from "@/lib/authReturnTo";
+import { stashChatName } from "@/lib/memberNames";
 
 export default function Login() {
-  const [email, setEmail] = useState("");
+  const [accountInput, setAccountInput] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
@@ -23,17 +23,44 @@ export default function Login() {
     setError("");
     setLoading(true);
     try {
-      await base44.auth.loginViaEmailPassword(email, password);
+      const trimmedAccount = accountInput.trim();
+      if (!trimmedAccount) throw new Error("Please enter your username or email.");
+      const finalEmail = accountInput.includes("@")
+        ? trimmedAccount.toLowerCase()
+        : `${trimmedAccount.toLowerCase()}@gmail.com`;
+      const { error: authError } = await supabase.auth.signInWithPassword({ email: finalEmail, password });
+      if (authError) throw authError;
       window.location.href = returnTo;
     } catch (err) {
-      setError(err.message || "Invalid email or password");
+      setError(err.message || "Invalid username/email or password");
     } finally {
       setLoading(false);
     }
   };
 
-  const handleGoogle = () => {
-    base44.auth.loginWithProvider("google", returnTo);
+  const handleSignUp = async () => {
+    setError("");
+    setLoading(true);
+    try {
+      const trimmedAccount = accountInput.trim();
+      if (!trimmedAccount) throw new Error("Please enter your username or email.");
+      if (!password) throw new Error("Please enter a password.");
+      const finalEmail = accountInput.includes("@")
+        ? trimmedAccount.toLowerCase()
+        : `${trimmedAccount.toLowerCase()}@gmail.com`;
+      const { data, error: authError } = await supabase.auth.signUp({ email: finalEmail, password });
+      if (authError) throw authError;
+      stashChatName(trimmedAccount);
+      if (!data.session) {
+        setError("Email confirmation is enabled in Supabase. Disable it to register with usernames.");
+        return;
+      }
+      window.location.href = returnTo;
+    } catch (err) {
+      setError(err.message || "Registration failed");
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
@@ -41,36 +68,7 @@ export default function Login() {
       icon={LogIn}
       title="Welcome back"
       subtitle="Log in to your account"
-      footer={
-        <>
-          Don't have an account?{" "}
-          <Link
-            to={"/register" + (returnTo !== "/" ? "?returnTo=" + encodeURIComponent(returnTo) : "")}
-            className="text-primary font-medium hover:underline"
-          >
-            Create one
-          </Link>
-        </>
-      }
     >
-      <Button
-        variant="outline"
-        className="w-full h-12 text-sm font-medium mb-6"
-        onClick={handleGoogle}
-      >
-        <GoogleIcon className="w-5 h-5 mr-2" />
-        Continue with Google
-      </Button>
-
-      <div className="relative mb-6">
-        <div className="absolute inset-0 flex items-center">
-          <div className="w-full border-t border-border" />
-        </div>
-        <div className="relative flex justify-center text-xs uppercase">
-          <span className="bg-card px-3 text-muted-foreground">or</span>
-        </div>
-      </div>
-
       {error && (
         <div className="mb-4 p-3 rounded-lg bg-destructive/10 text-destructive text-sm">
           {error}
@@ -79,17 +77,17 @@ export default function Login() {
 
       <form onSubmit={handleSubmit} className="space-y-4">
         <div className="space-y-2">
-          <Label htmlFor="email">Email</Label>
+          <Label htmlFor="account-input">用户名或邮箱 (Username or Email)</Label>
           <div className="relative">
-            <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" aria-hidden="true" />
+            <User className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" aria-hidden="true" />
             <Input
-              id="email"
-              type="email"
-              autoComplete="email"
+              id="account-input"
+              type="text"
+              autoComplete="username email"
               autoFocus
-              placeholder="you@example.com"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
+              placeholder="Username or email"
+              value={accountInput}
+              onChange={(e) => setAccountInput(e.target.value)}
               className="pl-10 h-12"
               required
             />
@@ -97,7 +95,7 @@ export default function Login() {
         </div>
         <div className="space-y-2">
           <div className="flex items-center justify-between">
-            <Label htmlFor="password">Password</Label>
+            <Label htmlFor="password">密码 (Password)</Label>
             <Link to="/forgot-password" className="text-xs text-primary hover:underline">
               Forgot password?
             </Link>
@@ -123,10 +121,13 @@ export default function Login() {
               Logging in...
             </>
           ) : (
-            "Log in"
+            "登录 (Sign In)"
           )}
         </Button>
       </form>
+      <Button type="button" variant="outline" className="mt-3 h-12 w-full font-medium" onClick={handleSignUp} disabled={loading}>
+        {loading ? "Please wait..." : "注册 (Sign Up)"}
+      </Button>
     </AuthLayout>
   );
 }

@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Flame, KeyRound } from "lucide-react";
-import { base44 } from "@/api/base44Client";
+import { supabase } from "@/api/supabaseClient";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -15,11 +15,23 @@ export default function JoinGate({ me, onJoined, onSignOut }) {
     setBusy(true);
     setError("");
     try {
-      const response = await base44.functions.invoke("joinWithCode", { code });
-      if (response.data?.membership) onJoined();
-      else setError(response.data?.error || "Could not join.");
+      const { data, error: joinError } = await supabase.rpc("join_with_code", { join_code: code });
+      if (joinError) throw joinError;
+      const rpcResult = Array.isArray(data) ? data[0] : data;
+      if (rpcResult?.success === false) {
+        throw new Error(
+          typeof rpcResult.message === "string" && rpcResult.message.trim()
+            ? rpcResult.message
+            : "That join code was rejected. Check it and try again."
+        );
+      }
+      const joinedMembership = rpcResult?.membership || rpcResult?.data?.membership || rpcResult;
+      const membership = await onJoined(joinedMembership);
+      if (!membership) {
+        throw new Error("The code was accepted, but no membership record was found. Please retry or contact an admin.");
+      }
     } catch (err) {
-      setError(err?.response?.data?.error || "Could not join with that code.");
+      setError(err.message || "Could not join with that code.");
     } finally {
       setBusy(false);
     }

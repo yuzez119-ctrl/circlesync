@@ -45,9 +45,11 @@ export default function Sidebar({
       <div className="flex-1 overflow-y-auto px-3 py-4">
         <div className="mb-2 flex items-center justify-between px-2">
           <span className="text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">Channels</span>
-          <Button variant="ghost" size="icon" onClick={onNewChannel} aria-label="New channel" className="h-7 w-7 text-muted-foreground">
-            <Plus className="h-4 w-4" />
-          </Button>
+          {isAdmin && (
+            <Button variant="ghost" size="icon" onClick={onNewChannel} aria-label="New channel" className="h-7 w-7 text-muted-foreground">
+              <Plus className="h-4 w-4" />
+            </Button>
+          )}
         </div>
 
         <div className="mb-6 space-y-0.5">

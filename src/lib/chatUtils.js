@@ -41,7 +41,21 @@ export function makeJoinCode() {
 // Someone's custom name wins over the name from their account.
 export function displayNameFor(displayNames, userId, fallback) {
   const custom = userId ? displayNames?.[userId] : null;
-  return custom || fallback || "Unknown";
+  return custom || fallback || "";
+}
+
+export function membersWithNames(members, displayNames, currentUserId = null) {
+  const self = (members || []).find((member) => member?.user_id === currentUserId);
+  const selfName = displayNameFor(displayNames, currentUserId, self?.full_name).trim().toLocaleLowerCase();
+  const unique = new Map();
+  (members || []).forEach((member) => {
+    const userId = member?.user_id;
+    const name = displayNameFor(displayNames, userId, member?.full_name);
+    if (!userId || !name.trim() || unique.has(userId)) return;
+    if (userId !== currentUserId && selfName && name.trim().toLocaleLowerCase() === selfName) return;
+    unique.set(userId, member);
+  });
+  return Array.from(unique.values());
 }
 
 // ---- Mentions -----------------------------------------------------------------

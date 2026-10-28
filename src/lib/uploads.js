@@ -1,4 +1,4 @@
-import { appParams } from "@/lib/app-params";
+import { supabase, supabaseAnonKey, supabaseUrl } from "@/api/supabaseClient";
 
 export const MAX_FILE_BYTES = 25 * 1024 * 1024;
 const COMPRESS_OVER_BYTES = 1.2 * 1024 * 1024;
@@ -101,59 +101,52 @@ export async function cropImage(file, rect) {
 
 // Uploads privately (no public URL — only people in the chat can open the file),
 // reporting progress and stopping the moment the upload is cancelled.
-export function uploadPrivateFileWithProgress(file, { onProgress, signal } = {}) {
+/**
+ * @param {File} file
+ * @param {{ onProgress?: (progress: number) => void, signal?: AbortSignal }} [options]
+ */
+export function uploadPrivateFileWithProgress(file, options = {}) {
+  const { onProgress, signal } = options;
   return new Promise((resolve, reject) => {
-    if (!appParams?.appId) {
+    if (!supabaseUrl || !supabaseAnonKey) {
       reject(new Error("Uploads are unavailable right now"));
       return;
     }
 
-    const request = new XMLHttpRequest();
-    request.open("POST", `/api/apps/${appParams.appId}/integration-endpoints/Core/UploadPrivateFile`);
-    request.setRequestHeader("Accept", "application/json");
-    if (appParams.token) request.setRequestHeader("Authorization", `Bearer ${appParams.token}`);
-    if (typeof window !== "undefined") request.setRequestHeader("X-Origin-URL", window.location.href);
-
-    request.upload.onprogress = (event) => {
-      if (event.lengthComputable && onProgress) {
-        onProgress(Math.min(99, Math.round((event.loaded / event.total) * 100)));
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      if (!session) throw new Error("Sign in before uploading files");
+      const safeName = file.name.replace(/[\\/]/g, "_");
+      const path = `${session.user.id}/${crypto.randomUUID()}-${safeName}`;
+      const request = new XMLHttpRequest();
+      request.open("POST", `${supabaseUrl}/storage/v1/object/chat-attachments/${path.split("/").map(encodeURIComponent).join("/")}`);
+      request.setRequestHeader("Authorization", `Bearer ${session.access_token}`);
+      request.setRequestHeader("apikey", supabaseAnonKey);
+      request.setRequestHeader("Content-Type", file.type || "application/octet-stream");
+      request.setRequestHeader("x-upsert", "false");
+      request.upload.onprogress = (event) => {
+        if (event.lengthComputable && onProgress) onProgress(Math.min(99, Math.round((event.loaded / event.total) * 100)));
+      };
+      request.onload = () => {
+        if (request.status < 200 || request.status >= 300) {
+          let message = "Upload failed — please try again";
+          try { message = JSON.parse(request.responseText)?.message || message; } catch { /* use fallback */ }
+          reject(new Error(message));
+          return;
+        }
+        if (onProgress) onProgress(100);
+        resolve(path);
+      };
+      request.onerror = () => reject(new Error("Upload failed — check your connection"));
+      request.onabort = () => {
+        const error = /** @type {Error & { cancelled?: boolean }} */ (new Error("Upload cancelled"));
+        error.cancelled = true;
+        reject(error);
+      };
+      if (signal) {
+        if (signal.aborted) request.abort();
+        else signal.addEventListener("abort", () => request.abort(), { once: true });
       }
-    };
-
-    request.onload = () => {
-      if (request.status < 200 || request.status >= 300) {
-        reject(new Error("Upload failed — please try again"));
-        return;
-      }
-      let payload = null;
-      try {
-        payload = JSON.parse(request.responseText || "{}");
-      } catch {
-        payload = null;
-      }
-      const fileUri = payload?.file_uri || payload?.data?.file_uri;
-      if (!fileUri) {
-        reject(new Error("Upload failed — please try again"));
-        return;
-      }
-      if (onProgress) onProgress(100);
-      resolve(fileUri);
-    };
-
-    request.onerror = () => reject(new Error("Upload failed — check your connection"));
-    request.onabort = () => {
-      const error = new Error("Upload cancelled");
-      error.cancelled = true;
-      reject(error);
-    };
-
-    if (signal) {
-      if (signal.aborted) request.abort();
-      else signal.addEventListener("abort", () => request.abort(), { once: true });
-    }
-
-    const form = new FormData();
-    form.append("file", file, file.name);
-    request.send(form);
+      request.send(file);
+    }).catch(reject);
   });
 }

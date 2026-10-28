@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Plus, Trash2 } from "lucide-react";
-import { base44 } from "@/api/base44Client";
+import { supabase, TABLES } from "@/api/supabaseClient";
 import { Button } from "@/components/ui/button";
 import {
   AlertDialog,
@@ -22,7 +22,8 @@ export default function ChannelManager({ channels, titles, onChanged }) {
 
   const remove = async () => {
     if (!pendingDelete) return;
-    await base44.entities.Channel.delete(pendingDelete.id);
+    const { error } = await supabase.from(TABLES.channels).delete().eq("id", pendingDelete.id);
+    if (error) throw error;
     setPendingDelete(null);
     onChanged();
   };

@@ -1,0 +1,4 @@
+project_id = "circlesync"
+
+[functions.tier-admin]
+verify_jwt = true

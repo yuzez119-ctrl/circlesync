@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Download, FileText } from "lucide-react";
-import { base44 } from "@/api/base44Client";
+import { supabase } from "@/api/supabaseClient";
 import { Dialog, DialogContent } from "@/components/ui/dialog";
 import { Image } from "@/components/ui/image";
 import { cn } from "@/lib/utils";
@@ -36,11 +36,11 @@ function AttachmentFile({ attachment }) {
   const open = async () => {
     setBusy(true);
     try {
-      const { signed_url } = await base44.integrations.Core.CreateFileSignedUrl({
-        file_uri: attachment.file_uri,
-        expires_in: 300,
-      });
-      if (signed_url) window.open(signed_url, "_blank", "noopener");
+      const { data, error } = await supabase.storage
+        .from("chat-attachments")
+        .createSignedUrl(attachment.file_uri, 300);
+      if (error) throw error;
+      if (data?.signedUrl) window.open(data.signedUrl, "_blank", "noopener");
     } finally {
       setBusy(false);
     }

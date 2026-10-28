@@ -1,23 +1,28 @@
-import { base44 } from "@/api/base44Client";
+import { supabase, TABLES } from "@/api/supabaseClient";
 
 const PENDING_KEY = "campfire.pending-chat-name";
 
 // A custom name replaces the name from someone's account, everywhere in the chat.
 export async function saveMemberName(userId, name) {
   const trimmed = (name || "").trim();
-  const { items } = await base44.entities.MemberName.filter({ user_id: userId }, { limit: 1 });
-  const existing = items[0];
-
   if (!trimmed) {
-    if (existing) await base44.entities.MemberName.delete(existing.id);
+    const { error } = await supabase.from(TABLES.memberNames).delete().eq("user_id", userId);
+    if (error) throw error;
     return;
   }
 
-  if (existing) {
-    await base44.entities.MemberName.update(existing.id, { display_name: trimmed });
-  } else {
-    await base44.entities.MemberName.create({ user_id: userId, display_name: trimmed });
-  }
+  const { data: existing, error: lookupError } = await supabase
+    .from(TABLES.memberNames)
+    .select("id")
+    .eq("user_id", userId)
+    .limit(1)
+    .maybeSingle();
+  if (lookupError) throw lookupError;
+
+  const result = existing
+    ? await supabase.from(TABLES.memberNames).update({ display_name: trimmed }).eq("id", existing.id)
+    : await supabase.from(TABLES.memberNames).insert({ user_id: userId, display_name: trimmed });
+  if (result.error) throw result.error;
 }
 
 // The name someone types when signing up is held until they are inside the chat.
