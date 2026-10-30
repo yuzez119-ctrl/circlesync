@@ -4,6 +4,19 @@ import { Check, X } from "lucide-react";
 import { supabase, TABLES } from "@/api/supabaseClient";
 import { Button } from "@/components/ui/button";
 
+async function errorMessage(error) {
+  if (error?.context && typeof error.context.clone === "function") {
+    try {
+      const payload = await error.context.clone().json();
+      if (typeof payload?.error === "string") return payload.error;
+      if (typeof payload?.message === "string") return payload.message;
+    } catch {
+      // Use the SDK message when the response is not JSON.
+    }
+  }
+  return error?.message || "That did not work.";
+}
+
 export default function ApprovalsPanel({ isFounder }) {
   const [requests, setRequests] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -44,7 +57,7 @@ export default function ApprovalsPanel({ isFounder }) {
         );
       await load();
     } catch (err) {
-      setError(err?.response?.data?.error || err.message || "That did not work.");
+      setError(await errorMessage(err));
     } finally {
       setBusy(null);
     }
@@ -57,9 +70,9 @@ export default function ApprovalsPanel({ isFounder }) {
   return (
     <div className="space-y-4">
       <p className="max-w-2xl text-sm text-muted-foreground">
-        Tier changes an admin proposes land here. A change goes live once every other admin has agreed to it, or
-        as soon as a Founder applies it. A Founder never needs agreement, and only a Founder can settle making
-        someone an admin.
+        Member-tier and announcement-removal requests go live after every Admin agrees, or immediately when a
+        Founder approves. Admin tier-structure changes follow the same approval rule. Only a Founder can approve
+        promotions to Admin.
       </p>
 
       {notice && (
@@ -79,6 +92,8 @@ export default function ApprovalsPanel({ isFounder }) {
                   Proposed by {request.proposed_by_name || "an admin"} ·{" "}
                   {moment(request.created_date).format("D MMM, HH:mm")}
                   {request.kind === "promotion" ? " · needs the Founder" : ""}
+                  {request.kind === "member_tier_change" ? " · member tiers only" : ""}
+                  {request.kind === "notice_delete" ? " · announcement removal" : ""}
                 </p>
               </div>
 
@@ -118,7 +133,7 @@ export default function ApprovalsPanel({ isFounder }) {
         })}
         {requests.length === 0 && (
           <p className="px-4 py-6 text-center text-sm text-muted-foreground">
-            Nothing waiting. Tier changes admins propose will show up here.
+            Nothing waiting. Member-tier, announcement-removal, and Admin tier requests will show up here.
           </p>
         )}
       </div>

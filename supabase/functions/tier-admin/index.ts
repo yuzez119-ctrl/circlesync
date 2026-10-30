@@ -80,6 +80,55 @@ Deno.serve(async (request) => {
     const tiersOf = (entry: any) => (entry?.title_ids || []).map((id: string) => titlesById[id]).filter(Boolean);
     const founder = tiersOf(member).some((tier: any) => tier.tier_type === FOUNDER);
     const admin = founder || tiersOf(member).some((tier: any) => tier.tier_type === ADMIN);
+
+    if (action === "requestOwnMemberTiers") {
+      if (!member) return fail("Join the chat before requesting a tier change.", 403);
+      if (admin) return fail("Member-tier requests are for regular members.", 403);
+      if (!Array.isArray(body.tierIds)) return fail("Choose your member tiers.");
+
+      const requestedIds = [...new Set(body.tierIds.filter((id: unknown): id is string => typeof id === "string"))];
+      if (requestedIds.some((id) => !titlesById[id] || (titlesById[id]?.tier_type || STANDARD) !== STANDARD)) {
+        return fail("You can request member tiers only.", 403);
+      }
+      const protectedIds = (member.title_ids || []).filter((id: string) => titlesById[id] && (titlesById[id]?.tier_type || STANDARD) !== STANDARD);
+      const nextIds = [...protectedIds, ...requestedIds];
+      const currentIds = [...new Set((member.title_ids || []).filter((id: string) => titlesById[id]))];
+      if (JSON.stringify([...currentIds].sort()) === JSON.stringify([...nextIds].sort())) {
+        return fail("Choose a different member-tier selection.");
+      }
+
+      const { data: pending, error: pendingError } = await db.from("TierRequest")
+        .select("id")
+        .eq("kind", "member_tier_change")
+        .eq("status", "pending")
+        .eq("proposed_by", user.id)
+        .limit(1)
+        .maybeSingle();
+      if (pendingError) throw pendingError;
+      if (pending) return fail("You already have a member-tier request waiting for a decision.");
+
+      const { data: requesterNameRow, error: requesterNameError } = await db.from("MemberName")
+        .select("display_name")
+        .eq("user_id", user.id)
+        .order("created_date", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      if (requesterNameError) throw requesterNameError;
+      const requesterName = requesterNameRow?.display_name || member.full_name || member.user_email || "A member";
+      const selectedNames = requestedIds.map((id) => titlesById[id].name);
+      const { data: request, error: requestError } = await db.from("TierRequest").insert({
+        kind: "member_tier_change",
+        summary: `${requesterName} requests member tiers: ${selectedNames.join(", ") || "No member tiers"}`,
+        payload: { targetUserId: user.id, tierIds: nextIds },
+        proposed_by: user.id,
+        proposed_by_name: requesterName,
+        status: "pending",
+        approvals: [],
+      }).select().single();
+      if (requestError) throw requestError;
+      return json({ applied: false, request });
+    }
+
     if (!admin) return fail("Only admins can change tiers.", 403);
 
     const { data: nameRow, error: nameLookupError } = await db.from("MemberName")
@@ -117,9 +166,33 @@ Deno.serve(async (request) => {
     };
     const applyRequest = async (tierRequest: any, actorName = myName) => {
       const payload = tierRequest.payload || {};
+      if (tierRequest.kind === "member_tier_change") {
+        if (payload.targetUserId !== tierRequest.proposed_by) {
+          throw new Error("A member tier request can only update the requester.");
+        }
+        const target = rows.find((entry) => entry.user_id === payload.targetUserId);
+        if (!target) throw new Error("The requesting member no longer exists.");
+        const requestedIds = Array.isArray(payload.tierIds) ? [...new Set(payload.tierIds)] : [];
+        if (requestedIds.some((id: string) => !titlesById[id] || (titlesById[id]?.tier_type || STANDARD) !== STANDARD)) {
+          throw new Error("Member-tier requests cannot change Admin or Founder tiers.");
+        }
+        const protectedIds = (target.title_ids || []).filter((id: string) => titlesById[id] && (titlesById[id]?.tier_type || STANDARD) !== STANDARD);
+        await writeTiers(target, [...protectedIds, ...requestedIds], actorName);
+        return;
+      }
       if (tierRequest.kind === "promotion" || tierRequest.kind === "assignment") {
         const target = rows.find((entry) => entry.user_id === payload.targetUserId);
         if (target) await writeTiers(target, payload.tierIds || [], actorName);
+        return;
+      }
+      if (tierRequest.kind === "notice_delete") {
+        const { error } = await db.rpc("delete_approved_notice", {
+          _notice_id: payload.noticeId,
+          _request_id: String(tierRequest.id),
+          _actor_id: user.id,
+          _actor_name: actorName,
+        });
+        if (error) throw error;
         return;
       }
       if (payload.op === "delete") {
@@ -148,6 +221,46 @@ Deno.serve(async (request) => {
       }).select().single();
       if (error) throw error;
       return json({ notice });
+    }
+
+    if (action === "requestDeleteNotice") {
+      const noticeId = typeof body.noticeId === "string" ? body.noticeId : "";
+      if (!noticeId) return fail("Choose an announcement to remove.");
+      const { data: notice, error: noticeError } = await db.from("NoticeBoard")
+        .select("id, kind, title")
+        .eq("id", noticeId)
+        .maybeSingle();
+      if (noticeError) throw noticeError;
+      if (!notice || notice.kind !== "announcement") return fail("Only announcements can be removed.", 404);
+      const { data: pendingRemovals, error: pendingRemovalError } = await db.from("TierRequest")
+        .select("payload")
+        .eq("kind", "notice_delete")
+        .eq("status", "pending")
+        .limit(500);
+      if (pendingRemovalError) throw pendingRemovalError;
+      if ((pendingRemovals || []).some((request) => request.payload?.noticeId === notice.id)) {
+        return fail("A removal request for this announcement is already pending.");
+      }
+
+      const request = await propose("notice_delete", `Remove the announcement “${notice.title || "Announcement"}”`, {
+        noticeId: notice.id,
+      });
+      if (!founder) return json({ applied: false, request });
+
+      const { data: removed, error: removeError } = await db.rpc("delete_approved_notice", {
+        _notice_id: notice.id,
+        _request_id: String(request.id),
+        _actor_id: user.id,
+        _actor_name: myName,
+      });
+      if (removeError) throw removeError;
+      const { data: appliedRequest, error: updateError } = await db.from("TierRequest")
+        .update({ status: "applied", resolved_by_name: myName })
+        .eq("id", request.id)
+        .select()
+        .single();
+      if (updateError) throw updateError;
+      return json({ applied: true, request: appliedRequest, notice: removed?.notice });
     }
 
     if (action === "removeMember") {

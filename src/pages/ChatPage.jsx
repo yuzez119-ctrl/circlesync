@@ -17,6 +17,7 @@ import NameDialog from "@/components/chat/NameDialog";
 import MessageAlerts from "@/components/chat/MessageAlerts";
 import NoticeBoard from "@/components/chat/NoticeBoard";
 import AccountEmailDialog from "@/components/chat/AccountEmailDialog";
+import MemberTierRequestDialog from "@/components/chat/MemberTierRequestDialog";
 
 export default function ChatPage() {
   const navigate = useNavigate();
@@ -46,6 +47,7 @@ export default function ChatPage() {
   const [tick, setTick] = useState(0);
   const [nameOpen, setNameOpen] = useState(false);
   const [emailOpen, setEmailOpen] = useState(false);
+  const [tierRequestOpen, setTierRequestOpen] = useState(false);
   const [alertList, setAlertList] = useState([]);
   const [founderTitleSaving, setFounderTitleSaving] = useState(false);
   const [founderTitleError, setFounderTitleError] = useState("");
@@ -359,6 +361,8 @@ export default function ChatPage() {
       founderTitleSaving={founderTitleSaving}
       founderTitleError={founderTitleError}
       isAdmin={isAdmin}
+      canRequestTierChange={!isAdmin}
+      onRequestTierChange={() => setTierRequestOpen(true)}
       onEditName={() => setNameOpen(true)}
       onChangeLoginEmail={() => setEmailOpen(true)}
       onOpenAdmin={() => navigate("/admin")}
@@ -456,6 +460,13 @@ export default function ChatPage() {
         onOpenChange={setEmailOpen}
         currentEmail={me.email}
         onChanged={async () => { await load(false); }}
+      />
+
+      <MemberTierRequestDialog
+        open={tierRequestOpen}
+        onOpenChange={setTierRequestOpen}
+        titles={titles}
+        currentTierIds={membership.title_ids || []}
       />
     </div>
   );

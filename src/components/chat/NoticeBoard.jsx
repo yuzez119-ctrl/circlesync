@@ -1,11 +1,21 @@
 import { useCallback, useEffect, useState } from "react";
 import moment from "moment";
-import { Megaphone, Menu, Send } from "lucide-react";
+import { Megaphone, Menu, Send, Trash2 } from "lucide-react";
 import { supabase, TABLES } from "@/api/supabaseClient";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 
 const PAGE_SIZE = 50;
 
@@ -24,6 +34,10 @@ export default function NoticeBoard({ isAdmin, onOpenSidebar }) {
   const [body, setBody] = useState("");
   const [publishing, setPublishing] = useState(false);
   const [publishError, setPublishError] = useState("");
+  const [pendingRemoval, setPendingRemoval] = useState(null);
+  const [removing, setRemoving] = useState(false);
+  const [removalMessage, setRemovalMessage] = useState("");
+  const [removalError, setRemovalError] = useState("");
 
   const loadPage = useCallback(async (offset = 0) => {
     const { data, error: queryError } = await supabase.from(TABLES.noticeBoard)
@@ -57,6 +71,9 @@ export default function NoticeBoard({ isAdmin, onOpenSidebar }) {
       .channel("notice-board-live")
       .on("postgres_changes", { event: "INSERT", schema: "public", table: TABLES.noticeBoard }, ({ new: notice }) => {
         setNotices((current) => [notice, ...current.filter((entry) => entry.id !== notice.id)]);
+      })
+      .on("postgres_changes", { event: "DELETE", schema: "public", table: TABLES.noticeBoard }, ({ old: removed }) => {
+        setNotices((current) => current.filter((entry) => entry.id !== removed.id));
       })
       .subscribe();
     return () => { supabase.removeChannel(channel); };
@@ -106,6 +123,41 @@ export default function NoticeBoard({ isAdmin, onOpenSidebar }) {
     }
   };
 
+  const requestRemoval = async () => {
+    if (!pendingRemoval) return;
+    setRemoving(true);
+    setRemovalMessage("");
+    setRemovalError("");
+    try {
+      const { data, error: functionError } = await supabase.functions.invoke("tier-admin", {
+        body: { action: "requestDeleteNotice", noticeId: pendingRemoval.id },
+      });
+      if (functionError) throw functionError;
+      if (data?.applied) {
+        setNotices((current) => [data.notice, ...current.filter((entry) => entry.id !== pendingRemoval.id && entry.id !== data.notice?.id)]);
+        setRemovalMessage("The announcement was removed. A permanent approval record was added to the Notice Board.");
+      } else if (data?.request) {
+        setRemovalMessage("Removal request sent. The announcement will be removed after all Admins agree or a Founder approves it.");
+      } else {
+        throw new Error("The removal request could not be submitted.");
+      }
+      setPendingRemoval(null);
+    } catch (requestError) {
+      let message = requestError?.message || "The removal request could not be submitted.";
+      if (requestError?.context && typeof requestError.context.clone === "function") {
+        try {
+          const payload = await requestError.context.clone().json();
+          if (typeof payload?.error === "string") message = payload.error;
+        } catch {
+          // Use the SDK error when the Edge Function response is not JSON.
+        }
+      }
+      setRemovalError(message);
+    } finally {
+      setRemoving(false);
+    }
+  };
+
   return (
     <section className="flex min-w-0 flex-1 flex-col overflow-y-auto bg-background">
       <header className="flex items-center gap-3 border-b border-border bg-card/30 px-4 py-5 sm:px-8">
@@ -114,7 +166,7 @@ export default function NoticeBoard({ isAdmin, onOpenSidebar }) {
         </Button>
         <div>
           <h1 className="font-display text-xl font-semibold tracking-tight">Notice Board</h1>
-          <p className="mt-1 text-sm text-muted-foreground">Announcements and a permanent record of member tier changes.</p>
+          <p className="mt-1 text-sm text-muted-foreground">Announcements and a permanent record of member changes and approved removals.</p>
         </div>
       </header>
 
@@ -143,6 +195,9 @@ export default function NoticeBoard({ isAdmin, onOpenSidebar }) {
           </form>
         )}
 
+        {removalMessage && <p role="status" className="rounded-xl border border-border bg-card/60 px-3 py-2 text-sm text-muted-foreground">{removalMessage}</p>}
+        {removalError && <p role="alert" className="text-sm text-destructive">{removalError}</p>}
+
         {error && (
           <div className="rounded-xl border border-destructive/30 bg-destructive/5 px-4 py-3 text-sm text-destructive" role="alert">
             {error} <button type="button" onClick={loadInitial} className="ml-2 underline">Retry</button>
@@ -157,14 +212,14 @@ export default function NoticeBoard({ isAdmin, onOpenSidebar }) {
               <article key={notice.id} className="rounded-2xl border border-border bg-card/40 px-4 py-4 sm:px-5">
                 <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
                   <div className="font-heading text-sm font-semibold">
-                    {notice.kind === "announcement" ? (notice.title || "Announcement") : notice.kind === "promotion" ? "Member promoted" : "Member tiers changed"}
+                    {notice.kind === "announcement" ? (notice.title || "Announcement") : notice.kind === "promotion" ? "Member promoted" : notice.kind === "notice_removal" ? "Notice removed after approval" : "Member tiers changed"}
                   </div>
                   <time className="text-xs text-muted-foreground" dateTime={notice.created_date}>
                     {moment(notice.created_date).format("MMM D, YYYY · HH:mm")}
                   </time>
                 </div>
 
-                {notice.kind === "announcement" ? (
+                {notice.kind === "announcement" || notice.kind === "notice_removal" ? (
                   <div className="mt-2 whitespace-pre-wrap break-words text-sm leading-relaxed">{notice.body}</div>
                 ) : (
                   <div className="mt-2 space-y-2 text-sm">
@@ -176,8 +231,16 @@ export default function NoticeBoard({ isAdmin, onOpenSidebar }) {
                   </div>
                 )}
 
-                {notice.kind === "announcement" && (
-                  <p className="mt-3 text-xs text-muted-foreground">Posted by {notice.actor_name}</p>
+                {(notice.kind === "announcement" || notice.kind === "notice_removal") && (
+                  <div className="mt-3 flex items-center justify-between gap-3">
+                    <p className="text-xs text-muted-foreground">{notice.kind === "announcement" ? "Posted by" : "Removal approved by"} {notice.actor_name}</p>
+                    {isAdmin && notice.kind === "announcement" && (
+                      <Button type="button" variant="ghost" size="sm" onClick={() => { setPendingRemoval(notice); setRemovalError(""); }} className="h-8 gap-1.5 text-muted-foreground">
+                        <Trash2 className="h-3.5 w-3.5" />
+                        Request removal
+                      </Button>
+                    )}
+                  </div>
                 )}
               </article>
             ))}
@@ -195,6 +258,23 @@ export default function NoticeBoard({ isAdmin, onOpenSidebar }) {
           </div>
         )}
       </div>
+
+      <AlertDialog open={!!pendingRemoval} onOpenChange={(open) => !open && !removing && setPendingRemoval(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Request announcement removal?</AlertDialogTitle>
+            <AlertDialogDescription>
+              “{pendingRemoval?.title || "Announcement"}” will be removed after every Admin agrees or a Founder approves. A permanent removal record will remain on the Notice Board.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={removing}>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={requestRemoval} disabled={removing}>
+              {removing ? "Sending…" : "Request removal"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </section>
   );
 }

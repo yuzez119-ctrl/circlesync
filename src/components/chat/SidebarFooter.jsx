@@ -1,4 +1,4 @@
-import { LogOut, Mail, Pencil, Settings } from "lucide-react";
+import { BadgeCheck, LogOut, Mail, Pencil, Settings } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import { primaryColor } from "@/lib/tiers";
@@ -7,7 +7,8 @@ import TitleBadges from "./TitleBadges";
 
 export default function SidebarFooter({
   name, tiers, isAdmin, isFounder, showFounderTitle, onFounderTitleVisibilityChange,
-  founderTitleSaving, founderTitleError, onOpenAdmin, onEditName, onChangeLoginEmail, onSignOut,
+  founderTitleSaving, founderTitleError, canRequestTierChange, onRequestTierChange,
+  onOpenAdmin, onEditName, onChangeLoginEmail, onSignOut,
 }) {
   return (
     <div className="border-t border-border px-3 py-3">
@@ -15,6 +16,12 @@ export default function SidebarFooter({
         <Button variant="secondary" size="sm" onClick={onOpenAdmin} className="mb-3 w-full justify-start gap-2 rounded-xl">
           <Settings className="h-4 w-4" />
           Admin area
+        </Button>
+      )}
+      {canRequestTierChange && (
+        <Button variant="outline" size="sm" onClick={onRequestTierChange} className="mb-3 w-full justify-start gap-2 rounded-xl">
+          <BadgeCheck className="h-4 w-4" />
+          Request member tier change
         </Button>
       )}
       <div className="flex items-center gap-3 rounded-xl px-2 py-1.5">

@@ -24,6 +24,8 @@ export default function Sidebar({
   myTiers,
   isAdmin,
   onOpenAdmin,
+  canRequestTierChange,
+  onRequestTierChange,
   onEditName,
   onChangeLoginEmail,
   onSignOut,
@@ -140,6 +142,8 @@ export default function Sidebar({
         founderTitleSaving={founderTitleSaving}
         founderTitleError={founderTitleError}
         isAdmin={isAdmin}
+        canRequestTierChange={canRequestTierChange}
+        onRequestTierChange={onRequestTierChange}
         onOpenAdmin={onOpenAdmin}
         onEditName={onEditName}
         onChangeLoginEmail={onChangeLoginEmail}
