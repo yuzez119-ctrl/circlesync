@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { Navigate, useNavigate } from "react-router-dom";
 import { ArrowLeft, Crown, ShieldCheck } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -14,6 +14,7 @@ import JoinCodeCard from "@/components/admin/JoinCodeCard";
 export default function AdminPage() {
   const navigate = useNavigate();
   const [tab, setTab] = useState("tiers");
+  const hasEnteredAsAdmin = useRef(false);
   const {
     loading,
     me,
@@ -37,8 +38,13 @@ export default function AdminPage() {
 
   const isFounder = me?.role === "admin";
   const amAdmin = hasTierType(myTiers, "admin");
+  const isAuthorized = Boolean(me && (isFounder || amAdmin) && membership);
 
-  if (!me || (!isFounder && !amAdmin) || !membership) return <Navigate to="/" replace />;
+  // Keep the current Admin area open if a successful change also changes the
+  // actor's own tier. A fresh visit still has to pass this authorization check.
+  if (isAuthorized) hasEnteredAsAdmin.current = true;
+
+  if (!isAuthorized && !hasEnteredAsAdmin.current) return <Navigate to="/" replace />;
 
   return (
     <div className="min-h-screen bg-background">

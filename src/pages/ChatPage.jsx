@@ -15,6 +15,8 @@ import ChannelDialog from "@/components/chat/ChannelDialog";
 import NewDirectDialog from "@/components/chat/NewDirectDialog";
 import NameDialog from "@/components/chat/NameDialog";
 import MessageAlerts from "@/components/chat/MessageAlerts";
+import NoticeBoard from "@/components/chat/NoticeBoard";
+import AccountEmailDialog from "@/components/chat/AccountEmailDialog";
 
 export default function ChatPage() {
   const navigate = useNavigate();
@@ -33,6 +35,7 @@ export default function ChatPage() {
   } = useChatData();
 
   const [activeChannelId, setActiveChannelId] = useState(null);
+  const [activeView, setActiveView] = useState("chat");
   const [activeThreadId, setActiveThreadId] = useState(null);
   const [messages, setMessages] = useState([]);
   const [allDms, setAllDms] = useState([]);
@@ -42,7 +45,10 @@ export default function ChatPage() {
   const [directOpen, setDirectOpen] = useState(false);
   const [tick, setTick] = useState(0);
   const [nameOpen, setNameOpen] = useState(false);
+  const [emailOpen, setEmailOpen] = useState(false);
   const [alertList, setAlertList] = useState([]);
+  const [founderTitleSaving, setFounderTitleSaving] = useState(false);
+  const [founderTitleError, setFounderTitleError] = useState("");
 
   const titlesById = useMemo(
     () => Object.fromEntries(titles.map((title) => [title.id, title])),
@@ -58,6 +64,14 @@ export default function ChatPage() {
     () => members.map((member) => displayNameFor(displayNames, member.user_id, member.full_name)),
     [members, displayNames]
   );
+  const visibleMemberTiers = useMemo(() => Object.fromEntries(
+    Object.entries(memberTiers).map(([userId, tiers]) => [
+      userId,
+      userId === me?.id || members.find((member) => member.user_id === userId)?.show_founder_title !== false
+        ? tiers
+        : tiers.filter((tier) => tier.tier_type !== "founder"),
+    ])
+  ), [memberTiers, members, me?.id]);
 
   useEffect(() => {
     if (!membership || !activeChannelId) {
@@ -186,7 +200,28 @@ export default function ChatPage() {
   );
 
   const isAdmin = me?.role === "admin" || hasTierType(myTiers, "admin");
+  const isFounder = hasTierType(myTiers, "founder");
   useMessageAlerts({ me, myName, enabled: !!membership, onMessage: handleIncoming });
+
+  const setFounderTitleVisibility = async (show) => {
+    if (!isFounder || founderTitleSaving) return;
+    setFounderTitleSaving(true);
+    setFounderTitleError("");
+    try {
+      const { data, error } = await supabase.from(TABLES.memberships)
+        .update({ show_founder_title: show })
+        .eq("user_id", me.id)
+        .select("user_id")
+        .maybeSingle();
+      if (error) throw error;
+      if (!data) throw new Error("Only a Founder can change this setting.");
+      await load(false);
+    } catch (error) {
+      setFounderTitleError(error?.message || "Could not update Founder title visibility.");
+    } finally {
+      setFounderTitleSaving(false);
+    }
+  };
 
   // Keep a channel selected whenever the visible list changes (never while a private thread is open).
   useEffect(() => {
@@ -242,6 +277,7 @@ export default function ChatPage() {
   };
 
   const openThread = (partnerId) => {
+    setActiveView("chat");
     setActiveThreadId(partnerId);
     setActiveChannelId(null);
     setDirectOpen(false);
@@ -249,6 +285,7 @@ export default function ChatPage() {
   };
 
   const selectChannel = (id) => {
+    setActiveView("chat");
     setActiveChannelId(id);
     setActiveThreadId(null);
     setSidebarOpen(false);
@@ -305,6 +342,8 @@ export default function ChatPage() {
       channels={visible}
       activeChannelId={activeThreadId ? null : activeChannelId}
       onSelectChannel={selectChannel}
+      activeView={activeView}
+      onOpenNotices={() => { setActiveView("notices"); setSidebarOpen(false); }}
       onNewChannel={() => setChannelDialog({ open: true, channel: null })}
       threads={threads}
       activeThreadId={activeThreadId}
@@ -312,10 +351,16 @@ export default function ChatPage() {
       onNewDirect={() => setDirectOpen(true)}
       me={membership}
       displayNames={displayNames}
-      memberTiers={memberTiers}
+      memberTiers={visibleMemberTiers}
       myTiers={myTiers}
+      isFounder={isFounder}
+      showFounderTitle={membership.show_founder_title !== false}
+      onFounderTitleVisibilityChange={setFounderTitleVisibility}
+      founderTitleSaving={founderTitleSaving}
+      founderTitleError={founderTitleError}
       isAdmin={isAdmin}
       onEditName={() => setNameOpen(true)}
+      onChangeLoginEmail={() => setEmailOpen(true)}
       onOpenAdmin={() => navigate("/admin")}
       onSignOut={() => supabase.auth.signOut()}
       unreadCounts={unreadCounts}
@@ -343,13 +388,15 @@ export default function ChatPage() {
       )}
 
       <div className="relative flex min-w-0 flex-1">
-        <ChatPane
+        {activeView === "notices" ? (
+          <NoticeBoard isAdmin={isAdmin} onOpenSidebar={() => setSidebarOpen(true)} />
+        ) : <ChatPane
           channel={activeThreadId ? null : activeChannel}
           thread={activeThread}
           displayNames={displayNames}
           mentionNames={mentionNames}
           titlesById={titlesById}
-          memberTiers={memberTiers}
+          memberTiers={visibleMemberTiers}
           messages={activeThreadId ? threadViews : messages}
           currentUserId={me.id}
           me={me}
@@ -357,7 +404,7 @@ export default function ChatPage() {
           onSend={handleSend}
           onOpenSidebar={() => setSidebarOpen(true)}
           onEditChannel={(channel) => setChannelDialog({ open: true, channel })}
-        />
+        />}
 
         <MessageAlerts
           alerts={alertList}
@@ -369,7 +416,7 @@ export default function ChatPage() {
       <MemberPanel
         members={members}
         displayNames={displayNames}
-        memberTiers={memberTiers}
+        memberTiers={visibleMemberTiers}
         currentUserId={me.id}
       />
 
@@ -386,7 +433,7 @@ export default function ChatPage() {
         onOpenChange={setDirectOpen}
         members={members}
         displayNames={displayNames}
-        memberTiers={memberTiers}
+        memberTiers={visibleMemberTiers}
         currentUserId={me.id}
         onSelect={openThread}
       />
@@ -402,6 +449,13 @@ export default function ChatPage() {
           await saveMemberName(me.id, name);
           await load(false);
         }}
+      />
+
+      <AccountEmailDialog
+        open={emailOpen}
+        onOpenChange={setEmailOpen}
+        currentEmail={me.email}
+        onChanged={async () => { await load(false); }}
       />
     </div>
   );

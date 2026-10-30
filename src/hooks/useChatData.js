@@ -41,7 +41,12 @@ export default function useChatData() {
         full_name: authUser.user_metadata?.full_name || authUser.email?.split("@")[0] || "Member",
         role: "user",
       };
-      setMe(fallbackUser);
+      // Preserve the resolved role during a background refresh. AdminPage uses
+      // this role to guard the route, so briefly resetting it to "user" would
+      // redirect a Founder to chat after every successful admin change.
+      setMe((current) => current?.id === fallbackUser.id
+        ? { ...fallbackUser, role: current.role }
+        : fallbackUser);
 
       const membershipResult = await supabase
         .from(TABLES.memberships)

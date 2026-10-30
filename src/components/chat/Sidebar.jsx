@@ -1,4 +1,4 @@
-import { Flame, Hash, Lock, MessageSquarePlus, Plus, X } from "lucide-react";
+import { Flame, Hash, Lock, MessageSquarePlus, Plus, ScrollText, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { displayNameFor } from "@/lib/chatUtils";
@@ -11,6 +11,8 @@ export default function Sidebar({
   channels,
   activeChannelId,
   onSelectChannel,
+  activeView,
+  onOpenNotices,
   onNewChannel,
   threads,
   activeThreadId,
@@ -24,6 +26,11 @@ export default function Sidebar({
   onOpenAdmin,
   onEditName,
   onSignOut,
+  isFounder,
+  showFounderTitle,
+  onFounderTitleVisibilityChange,
+  founderTitleSaving,
+  founderTitleError,
   unreadCounts,
   onClose,
   className,
@@ -76,6 +83,17 @@ export default function Sidebar({
           {channels.length === 0 && (
             <p className="px-2.5 py-2 text-xs text-muted-foreground">No channels you can see yet.</p>
           )}
+          <button
+            onClick={onOpenNotices}
+            aria-current={activeView === "notices" ? "page" : undefined}
+            className={cn(
+              "flex w-full items-center gap-2 rounded-xl px-2.5 py-2 text-left text-sm transition-colors",
+              activeView === "notices" ? "bg-primary/15 text-foreground" : "text-muted-foreground hover:bg-secondary/50 hover:text-foreground"
+            )}
+          >
+            <ScrollText className="h-3.5 w-3.5 shrink-0" />
+            <span>Notice Board</span>
+          </button>
         </div>
 
         <div className="mb-2 flex items-center justify-between px-2">
@@ -115,6 +133,11 @@ export default function Sidebar({
       <SidebarFooter
         name={displayNameFor(displayNames, me?.user_id, me?.full_name)}
         tiers={myTiers}
+        isFounder={isFounder}
+        showFounderTitle={showFounderTitle}
+        onFounderTitleVisibilityChange={onFounderTitleVisibilityChange}
+        founderTitleSaving={founderTitleSaving}
+        founderTitleError={founderTitleError}
         isAdmin={isAdmin}
         onOpenAdmin={onOpenAdmin}
         onEditName={onEditName}

@@ -22,4 +22,5 @@ export const TABLES = Object.freeze({
   directMessages: "DirectMessage",
   appConfig: "AppConfig",
   tierRequests: "TierRequest",
+  noticeBoard: "NoticeBoard",
 });

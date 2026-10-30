@@ -32,6 +32,41 @@ Deno.serve(async (request) => {
     const action = typeof body.action === "string" ? body.action : "";
     if (!action) return fail("action is required");
 
+    if (action === "changeOwnEmail") {
+      const username = typeof body.username === "string" ? body.username.trim().toLowerCase() : "";
+      if (!/^[a-z0-9](?:[a-z0-9._+-]{0,62}[a-z0-9])?$/.test(username) || username.includes("..")) {
+        return fail("Use 1–64 letters, numbers, dots, underscores, plus signs, or hyphens for the username.");
+      }
+      const email = `${username}@gmail.com`;
+      if (user.email?.toLowerCase() === email) return fail("That is already your login username.");
+
+      // Check for a friendly duplicate error, while Auth's unique constraint
+      // remains the final protection against concurrent changes.
+      for (let page = 1; ; page += 1) {
+        const { data, error } = await db.auth.admin.listUsers({ page, perPage: 1000 });
+        if (error) throw error;
+        const users = data.users || [];
+        if (users.some((entry) => entry.id !== user.id && entry.email?.toLowerCase() === email)) {
+          return fail("That username is already in use.", 409);
+        }
+        if (users.length < 1000) break;
+      }
+
+      const { data: updated, error: updateError } = await db.auth.admin.updateUserById(user.id, {
+        email,
+        email_confirm: true,
+      });
+      if (updateError) {
+        if (/already|duplicate|unique/i.test(updateError.message)) return fail("That username is already in use.", 409);
+        throw updateError;
+      }
+      const { error: membershipEmailError } = await db.from("Membership")
+        .update({ user_email: email })
+        .eq("user_id", user.id);
+      if (membershipEmailError) console.error("Could not refresh the membership email snapshot:", membershipEmailError);
+      return json({ email: updated.user.email });
+    }
+
     const [{ data: titleRows, error: titleError }, { data: members, error: memberError }] = await Promise.all([
       db.from("Title").select("*").limit(200),
       db.from("Membership").select("*").limit(500),
@@ -47,18 +82,30 @@ Deno.serve(async (request) => {
     const admin = founder || tiersOf(member).some((tier: any) => tier.tier_type === ADMIN);
     if (!admin) return fail("Only admins can change tiers.", 403);
 
-    const myName = member?.full_name || member?.user_email || user.user_metadata?.full_name || user.email || "An admin";
+    const { data: nameRow, error: nameLookupError } = await db.from("MemberName")
+      .select("display_name")
+      .eq("user_id", user.id)
+      .order("created_date", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (nameLookupError) throw nameLookupError;
+    const myName = nameRow?.display_name || member?.full_name || member?.user_email || user.user_metadata?.full_name || user.email || "An admin";
     const nameOf = (entry: any) => entry?.full_name || entry?.user_email || "A member";
     const adminIds = rows.filter((entry) => tiersOf(entry).some((tier: any) => tier.tier_type === ADMIN)).map((entry) => entry.user_id);
-    const writeTiers = async (target: any, ids: string[]) => {
+    const writeTiers = async (target: any, ids: string[], actorName = myName) => {
       const clean = [...new Set(ids)].filter((id) => titlesById[id]);
-      const { error } = await db.from("Membership").update({ title_ids: clean }).eq("id", target.id);
+      const { error } = await db.rpc("apply_member_tiers_with_notice", {
+        _target_user_id: target.user_id,
+        _tier_ids: clean,
+        _actor_id: user.id,
+        _actor_name: actorName,
+      });
       if (error) throw error;
       return clean;
     };
-    const dropTierFromMembers = async (tierId: string) => {
+    const dropTierFromMembers = async (tierId: string, actorName = myName) => {
       for (const target of rows.filter((entry) => (entry.title_ids || []).includes(tierId))) {
-        await writeTiers(target, target.title_ids.filter((id: string) => id !== tierId));
+        await writeTiers(target, target.title_ids.filter((id: string) => id !== tierId), actorName);
       }
     };
     const propose = async (kind: string, summary: string, payload: object) => {
@@ -68,17 +115,17 @@ Deno.serve(async (request) => {
       if (error) throw error;
       return data;
     };
-    const applyRequest = async (tierRequest: any) => {
+    const applyRequest = async (tierRequest: any, actorName = myName) => {
       const payload = tierRequest.payload || {};
       if (tierRequest.kind === "promotion" || tierRequest.kind === "assignment") {
         const target = rows.find((entry) => entry.user_id === payload.targetUserId);
-        if (target) await writeTiers(target, payload.tierIds || []);
+        if (target) await writeTiers(target, payload.tierIds || [], actorName);
         return;
       }
       if (payload.op === "delete") {
+        await dropTierFromMembers(payload.id, actorName);
         const { error } = await db.from("Title").delete().eq("id", payload.id);
         if (error) throw error;
-        await dropTierFromMembers(payload.id);
       } else if (payload.op === "update") {
         const { error } = await db.from("Title").update({ name: payload.name, color: payload.color, tier_type: payload.tier_type }).eq("id", payload.id);
         if (error) throw error;
@@ -88,7 +135,24 @@ Deno.serve(async (request) => {
       }
     };
 
+    if (action === "publishNotice") {
+      const title = typeof body.title === "string" ? body.title.trim().slice(0, 160) : "";
+      const message = typeof body.body === "string" ? body.body.trim().slice(0, 5000) : "";
+      if (!message) return fail("An announcement needs a message.");
+      const { data: notice, error } = await db.from("NoticeBoard").insert({
+        kind: "announcement",
+        title: title || null,
+        body: message,
+        actor_id: user.id,
+        actor_name: myName,
+      }).select().single();
+      if (error) throw error;
+      return json({ notice });
+    }
+
     if (action === "removeMember") {
+      // Keep deployed clients working until the updated frontend is live.
+      // This legacy action only removes the chat membership, as the old UI says.
       if (!founder) return fail("Only a Founder can remove people from the chat.", 403);
       const target = rows.find((entry) => entry.user_id === body.targetUserId);
       if (!target) return fail("That person has not joined the chat.", 404);
@@ -96,11 +160,48 @@ Deno.serve(async (request) => {
       if (tiersOf(target).some((tier: any) => tier.tier_type === FOUNDER)) {
         return fail("Transfer the Founder tier before removing this person.", 400);
       }
-
       const { error: nameError } = await db.from("MemberName").delete().eq("user_id", target.user_id);
       if (nameError) throw nameError;
       const { error: membershipError } = await db.from("Membership").delete().eq("id", target.id);
       if (membershipError) throw membershipError;
+      return json({ removed: true, targetUserId: target.user_id });
+    }
+
+    if (action === "deleteUser") {
+      if (!founder) return fail("Only a Founder can delete user accounts.", 403);
+      const target = rows.find((entry) => entry.user_id === body.targetUserId);
+      if (!target) return fail("That person has not joined the chat.", 404);
+      if (target.user_id === user.id) return fail("You cannot delete your own account.", 400);
+      const { data: targetNameRow, error: targetNameError } = await db.from("MemberName")
+        .select("display_name")
+        .eq("user_id", target.user_id)
+        .order("created_date", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      if (targetNameError) throw targetNameError;
+      const targetName = targetNameRow?.display_name || target.full_name || target.user_email || "Member";
+      const { data: targetAuth, error: targetAuthError } = await db.auth.admin.getUserById(target.user_id);
+      if (targetAuthError) throw targetAuthError;
+      if (!targetAuth.user) return fail("The user account could not be found.", 404);
+
+      // Delete the Auth account only after verifying Founder and target state.
+      // Keep historical chat messages, but remove the live membership/profile.
+      const { error: deleteAuthError } = await db.auth.admin.deleteUser(target.user_id);
+      if (deleteAuthError) throw deleteAuthError;
+      const { error: nameError } = await db.from("MemberName").delete().eq("user_id", target.user_id);
+      if (nameError) throw nameError;
+      const { error: membershipError } = await db.from("Membership").delete().eq("id", target.id);
+      if (membershipError) throw membershipError;
+      const { error: noticeError } = await db.from("NoticeBoard").insert({
+        kind: "announcement",
+        title: "User account deleted",
+        body: `${targetName}'s CircleSync account was deleted by ${myName}.`,
+        actor_id: user.id,
+        actor_name: myName,
+        affected_user_id: target.user_id,
+        affected_user_name: targetName,
+      });
+      if (noticeError) throw noticeError;
 
       return json({ removed: true, targetUserId: target.user_id });
     }
@@ -151,16 +252,20 @@ Deno.serve(async (request) => {
     }
 
     if (action === "deleteTier") {
-      const tier = body.id ? titlesById[body.id] : null;
+      const tierId = typeof body.id === "string" ? body.id : "";
+      const { data: tier, error: tierLookupError } = tierId
+        ? await db.from("Title").select("*").eq("id", tierId).maybeSingle()
+        : { data: null, error: null };
+      if (tierLookupError) throw tierLookupError;
       if (!tier) return fail("That tier no longer exists.", 404);
       if (!founder) {
         if (tier.tier_type !== STANDARD) return fail("Only a Founder can remove an Admin or Founder tier.", 403);
         const change = await propose("structure", `Delete the tier “${tier.name}”`, { op: "delete", id: tier.id, name: tier.name });
         return json({ applied: false, request: change });
       }
+      await dropTierFromMembers(tier.id);
       const { error } = await db.from("Title").delete().eq("id", tier.id);
       if (error) throw error;
-      await dropTierFromMembers(tier.id);
       return json({ applied: true });
     }
 
@@ -186,7 +291,7 @@ Deno.serve(async (request) => {
       const required = adminIds.filter((id) => id !== tierRequest.proposed_by && id !== user.id);
       const waiting = required.filter((id) => !approvals.some((entry: any) => entry.user_id === id));
       if (waiting.length === 0) {
-        await applyRequest(tierRequest);
+        await applyRequest(tierRequest, "全体Admin");
         const { data, error: updateError } = await db.from("TierRequest").update({ status: "applied", approvals, resolved_by_name: myName }).eq("id", tierRequest.id).select().single();
         if (updateError) throw updateError;
         return json({ status: "applied", applied: true, request: data });

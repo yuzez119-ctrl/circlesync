@@ -19,6 +19,20 @@ import { TITLE_PALETTE } from "@/lib/chatUtils";
 import { STANDARD, TIER_TYPE_OPTIONS, tierTypeLabel, tierTypeOf } from "@/lib/tiers";
 import TitleBadge from "@/components/chat/TitleBadge";
 
+async function getFunctionErrorMessage(error) {
+  const context = error?.context;
+  if (context && typeof context.clone === "function") {
+    try {
+      const payload = await context.clone().json();
+      if (typeof payload?.error === "string" && payload.error.trim()) return payload.error;
+      if (typeof payload?.message === "string" && payload.message.trim()) return payload.message;
+    } catch {
+      // Use the SDK error below if the response is not JSON.
+    }
+  }
+  return error?.message || "That change was not allowed.";
+}
+
 export default function TitleManager({ titles, isFounder, onChanged }) {
   const [editing, setEditing] = useState(null);
   const [name, setName] = useState("");
@@ -86,7 +100,7 @@ export default function TitleManager({ titles, isFounder, onChanged }) {
       cancel();
       await onChanged();
     } catch (err) {
-      setError(err?.response?.data?.error || err.message || "That change was not allowed.");
+      setError(await getFunctionErrorMessage(err));
     } finally {
       setBusy(false);
     }
@@ -109,7 +123,7 @@ export default function TitleManager({ titles, isFounder, onChanged }) {
       setPendingDelete(null);
       await onChanged();
     } catch (err) {
-      setError(err?.response?.data?.error || err.message || "That change was not allowed.");
+      setError(await getFunctionErrorMessage(err));
       setPendingDelete(null);
     } finally {
       setBusy(false);

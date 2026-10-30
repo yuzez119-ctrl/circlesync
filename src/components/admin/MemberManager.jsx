@@ -67,12 +67,12 @@ export default function MemberManager({ members, titles, displayNames, memberTie
     setError("");
     try {
       const { data, error } = await supabase.functions.invoke("tier-admin", {
-        body: { action: "removeMember", targetUserId: removing.user_id },
+        body: { action: "deleteUser", targetUserId: removing.user_id },
       });
       if (error) throw error;
       if (!data?.removed) throw new Error("The member was not removed.");
       setRemoving(null);
-      setNotice("Member removed from the chat.");
+      setNotice("User account deleted. The event was added to the Notice Board.");
       await onChanged();
     } catch (err) {
       setError(err?.message || "That member could not be removed.");
@@ -123,7 +123,7 @@ export default function MemberManager({ members, titles, displayNames, memberTie
                       variant="ghost"
                       size="icon"
                       onClick={() => setRemoving(member)}
-                      aria-label={`Remove ${name} from chat`}
+                    aria-label={`Delete ${name}'s account`}
                       className="h-8 w-8 text-destructive"
                     >
                       <UserRoundX className="h-4 w-4" />
@@ -172,15 +172,15 @@ export default function MemberManager({ members, titles, displayNames, memberTie
       <AlertDialog open={!!removing} onOpenChange={(open) => !open && setRemoving(null)}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Remove {removing ? displayNameFor(displayNames, removing.user_id, removing.full_name) : "member"}?</AlertDialogTitle>
+            <AlertDialogTitle>Delete {removing ? displayNameFor(displayNames, removing.user_id, removing.full_name) : "this user's"} account?</AlertDialogTitle>
             <AlertDialogDescription>
-              This removes their chat membership and display name. Their account and existing messages will remain.
+              This permanently deletes their CircleSync account, chat membership, and display name. Existing messages remain, and the deletion will be recorded on the Notice Board.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel disabled={busyId === removing?.id}>Cancel</AlertDialogCancel>
             <AlertDialogAction onClick={removeMember} disabled={busyId === removing?.id}>
-              Remove member
+              Delete account
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
