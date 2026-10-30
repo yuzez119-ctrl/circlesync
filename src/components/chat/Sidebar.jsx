@@ -25,6 +25,7 @@ export default function Sidebar({
   isAdmin,
   onOpenAdmin,
   onEditName,
+  onChangeLoginEmail,
   onSignOut,
   isFounder,
   showFounderTitle,
@@ -141,6 +142,7 @@ export default function Sidebar({
         isAdmin={isAdmin}
         onOpenAdmin={onOpenAdmin}
         onEditName={onEditName}
+        onChangeLoginEmail={onChangeLoginEmail}
         onSignOut={onSignOut}
       />
     </div>
