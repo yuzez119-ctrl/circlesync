@@ -211,15 +211,53 @@ Deno.serve(async (request) => {
     if (action === "publishNotice") {
       const title = typeof body.title === "string" ? body.title.trim().slice(0, 160) : "";
       const message = typeof body.body === "string" ? body.body.trim().slice(0, 5000) : "";
-      if (!message) return fail("An announcement needs a message.");
+      const rawAttachments = body.attachments === undefined ? [] : body.attachments;
+      if (!Array.isArray(rawAttachments) || rawAttachments.length > 10) {
+        return fail("Add no more than 10 attachments.");
+      }
+      const attachments = [];
+      for (const item of rawAttachments) {
+        if (!item || typeof item !== "object") return fail("An attachment is invalid.");
+        const fileUri = typeof item.file_uri === "string" ? item.file_uri : "";
+        const fileName = typeof item.file_name === "string" ? item.file_name.trim() : "";
+        const fileType = typeof item.file_type === "string" ? item.file_type.slice(0, 160) : "";
+        const fileSize = Number(item.file_size);
+        if (
+          !fileUri.startsWith(`${user.id}/`) || fileUri.includes("..") || fileUri.length > 1024 ||
+          !fileName || fileName.length > 255 || !Number.isInteger(fileSize) || fileSize < 0 || fileSize > 25 * 1024 * 1024
+        ) return fail("An attachment is invalid or too large.");
+        attachments.push({
+          file_uri: fileUri,
+          file_name: fileName,
+          file_type: fileType,
+          file_size: fileSize,
+          kind: fileType.startsWith("image/") ? "image" : "file",
+        });
+      }
+      if (!message && attachments.length === 0) return fail("An announcement needs a message or an attachment.");
       const { data: notice, error } = await db.from("NoticeBoard").insert({
         kind: "announcement",
         title: title || null,
         body: message,
+        attachments,
         actor_id: user.id,
         actor_name: myName,
       }).select().single();
       if (error) throw error;
+      return json({ notice });
+    }
+
+    if (action === "setNoticePinned") {
+      const noticeId = typeof body.noticeId === "string" ? body.noticeId : "";
+      if (!noticeId || typeof body.isPinned !== "boolean") return fail("Choose an announcement and pin state.");
+      const { data: notice, error } = await db.from("NoticeBoard")
+        .update({ is_pinned: body.isPinned })
+        .eq("id", noticeId)
+        .eq("kind", "announcement")
+        .select()
+        .maybeSingle();
+      if (error) throw error;
+      if (!notice) return fail("That announcement no longer exists.", 404);
       return json({ notice });
     }
 

@@ -7,8 +7,8 @@ import { cn } from "@/lib/utils";
 import { formatBytes } from "@/lib/uploads";
 import useSignedUrl from "@/hooks/useSignedUrl";
 
-function AttachmentImage({ attachment, onOpen }) {
-  const url = useSignedUrl(attachment.file_uri);
+function AttachmentImage({ attachment, onOpen, bucket }) {
+  const url = useSignedUrl(attachment.file_uri, bucket);
 
   if (!url) {
     return <div className="h-32 w-40 animate-pulse rounded-xl bg-secondary/50" />;
@@ -30,14 +30,14 @@ function AttachmentImage({ attachment, onOpen }) {
   );
 }
 
-function AttachmentFile({ attachment }) {
+function AttachmentFile({ attachment, bucket }) {
   const [busy, setBusy] = useState(false);
 
   const open = async () => {
     setBusy(true);
     try {
       const { data, error } = await supabase.storage
-        .from("chat-attachments")
+        .from(bucket)
         .createSignedUrl(attachment.file_uri, 300);
       if (error) throw error;
       if (data?.signedUrl) window.open(data.signedUrl, "_blank", "noopener");
@@ -66,7 +66,7 @@ function AttachmentFile({ attachment }) {
   );
 }
 
-export default function MessageAttachments({ attachments, mine }) {
+export default function MessageAttachments({ attachments, mine = false, bucket = "chat-attachments" }) {
   const [viewer, setViewer] = useState(null);
   const list = attachments || [];
   if (!list.length) return null;
@@ -79,7 +79,7 @@ export default function MessageAttachments({ attachments, mine }) {
       {images.length > 0 && (
         <div className="flex flex-wrap gap-2">
           {images.map((image) => (
-            <AttachmentImage key={image.file_uri} attachment={image} onOpen={setViewer} />
+            <AttachmentImage key={image.file_uri} attachment={image} onOpen={setViewer} bucket={bucket} />
           ))}
         </div>
       )}
@@ -87,7 +87,7 @@ export default function MessageAttachments({ attachments, mine }) {
       {others.length > 0 && (
         <div className="flex w-full max-w-[280px] flex-col gap-2">
           {others.map((item) => (
-            <AttachmentFile key={item.file_uri} attachment={item} />
+            <AttachmentFile key={item.file_uri} attachment={item} bucket={bucket} />
           ))}
         </div>
       )}

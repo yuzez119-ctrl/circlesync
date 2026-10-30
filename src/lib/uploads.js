@@ -103,10 +103,10 @@ export async function cropImage(file, rect) {
 // reporting progress and stopping the moment the upload is cancelled.
 /**
  * @param {File} file
- * @param {{ onProgress?: (progress: number) => void, signal?: AbortSignal }} [options]
+ * @param {{ onProgress?: (progress: number) => void, signal?: AbortSignal, bucket?: string }} [options]
  */
 export function uploadPrivateFileWithProgress(file, options = {}) {
-  const { onProgress, signal } = options;
+  const { onProgress, signal, bucket = "chat-attachments" } = options;
   return new Promise((resolve, reject) => {
     if (!supabaseUrl || !supabaseAnonKey) {
       reject(new Error("Uploads are unavailable right now"));
@@ -118,7 +118,7 @@ export function uploadPrivateFileWithProgress(file, options = {}) {
       const safeName = file.name.replace(/[\\/]/g, "_");
       const path = `${session.user.id}/${crypto.randomUUID()}-${safeName}`;
       const request = new XMLHttpRequest();
-      request.open("POST", `${supabaseUrl}/storage/v1/object/chat-attachments/${path.split("/").map(encodeURIComponent).join("/")}`);
+      request.open("POST", `${supabaseUrl}/storage/v1/object/${encodeURIComponent(bucket)}/${path.split("/").map(encodeURIComponent).join("/")}`);
       request.setRequestHeader("Authorization", `Bearer ${session.access_token}`);
       request.setRequestHeader("apikey", supabaseAnonKey);
       request.setRequestHeader("Content-Type", file.type || "application/octet-stream");

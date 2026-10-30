@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { supabase } from "@/api/supabaseClient";
 
 // Private files need a temporary link before they can be shown.
-export default function useSignedUrl(fileUri) {
+export default function useSignedUrl(fileUri, bucket = "chat-attachments") {
   const [url, setUrl] = useState(null);
 
   useEffect(() => {
@@ -12,7 +12,7 @@ export default function useSignedUrl(fileUri) {
     }
     let cancelled = false;
     setUrl(null);
-    supabase.storage.from("chat-attachments").createSignedUrl(fileUri, 3600)
+    supabase.storage.from(bucket).createSignedUrl(fileUri, 3600)
       .then(({ data, error }) => {
         if (!cancelled) setUrl(error ? null : data?.signedUrl || null);
       })
@@ -22,7 +22,7 @@ export default function useSignedUrl(fileUri) {
     return () => {
       cancelled = true;
     };
-  }, [fileUri]);
+  }, [fileUri, bucket]);
 
   return url;
 }
