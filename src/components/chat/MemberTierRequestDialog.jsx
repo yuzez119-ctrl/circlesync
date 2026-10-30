@@ -5,6 +5,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { supabase } from "@/api/supabaseClient";
 import { STANDARD, tierTypeOf } from "@/lib/tiers";
 
+/** @param {{ open: boolean, onOpenChange: (open: boolean) => void, titles: Array<{ id: string, name: string, color: string }>, currentTierIds: string[], onSubmitted?: () => void }} props */
 export default function MemberTierRequestDialog({ open, onOpenChange, titles, currentTierIds, onSubmitted }) {
   const [selected, setSelected] = useState([]);
   const [submitting, setSubmitting] = useState(false);

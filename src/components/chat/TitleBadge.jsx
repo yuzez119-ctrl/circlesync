@@ -1,5 +1,6 @@
 import { cn } from "@/lib/utils";
 
+/** @param {{ title: { name: string, color: string } | null, className?: string }} props */
 export default function TitleBadge({ title, className }) {
   if (!title) {
     return (

@@ -35,8 +35,8 @@ export default function Sidebar({
   founderTitleSaving,
   founderTitleError,
   unreadCounts,
-  onClose,
-  className,
+  onClose = () => {},
+  className = "",
 }) {
   return (
     <div className={cn("flex h-full w-[280px] flex-col border-r border-border bg-card/60", className)}>

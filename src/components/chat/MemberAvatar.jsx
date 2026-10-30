@@ -2,7 +2,8 @@ import { cn } from "@/lib/utils";
 
 const FALLBACK = "#6B7280";
 
-export default function MemberAvatar({ name, color, size = 36, className }) {
+/** @param {{ name?: string, color?: string, size?: number, className?: string }} props */
+export default function MemberAvatar({ name = "?", color, size = 36, className }) {
   const initials = (name || "?")
     .split(" ")
     .map((part) => part[0])

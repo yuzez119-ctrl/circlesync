@@ -1,6 +1,7 @@
 import { cn } from "@/lib/utils";
 import TitleBadge from "./TitleBadge";
 
+/** @param {{ titles?: Array<{ id: string, name: string, color: string }>, className?: string }} props */
 export default function TitleBadges({ titles, className }) {
   const list = titles || [];
 

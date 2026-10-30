@@ -4,7 +4,7 @@ import { primaryColor } from "@/lib/tiers";
 import MemberAvatar from "./MemberAvatar";
 import TitleBadges from "./TitleBadges";
 
-export default function MemberPanel({ members, displayNames, memberTiers, currentUserId, className }) {
+export default function MemberPanel({ members, displayNames, memberTiers, currentUserId, className = "" }) {
   const visibleMembers = membersWithNames(members, displayNames, currentUserId);
   return (
     <aside className={cn("hidden w-[264px] shrink-0 flex-col border-l border-border bg-card/30 lg:flex", className)}>
