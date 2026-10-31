@@ -36,7 +36,12 @@ export default function ChannelDialog({ open, onOpenChange, channel, titles, onS
   const save = async () => {
     if (!name.trim()) return;
     setBusy(true);
-    const payload = { name: name.trim(), description: description.trim(), allowed_title_ids: allowed };
+    const payload = {
+      name: name.trim(),
+      description: description.trim(),
+      allowed_title_ids: allowed,
+      ...(!channel?.id ? { id: globalThis.crypto.randomUUID() } : {}),
+    };
     const result = channel?.id
       ? await supabase.from(TABLES.channels).update(payload).eq("id", channel.id)
       : await supabase.from(TABLES.channels).insert(payload);

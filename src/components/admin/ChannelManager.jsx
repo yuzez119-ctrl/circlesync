@@ -18,14 +18,25 @@ import TitleBadge from "@/components/chat/TitleBadge";
 export default function ChannelManager({ channels, titles, onChanged }) {
   const [dialog, setDialog] = useState({ open: false, channel: null });
   const [pendingDelete, setPendingDelete] = useState(null);
+  const [deleteError, setDeleteError] = useState("");
   const titlesById = Object.fromEntries(titles.map((title) => [title.id, title]));
 
   const remove = async () => {
     if (!pendingDelete) return;
-    const { error } = await supabase.from(TABLES.channels).delete().eq("id", pendingDelete.id);
-    if (error) throw error;
-    setPendingDelete(null);
-    onChanged();
+    if (!pendingDelete.id) {
+      setDeleteError("This channel has no ID yet. Refresh the page after the channel data is repaired.");
+      return;
+    }
+
+    try {
+      const { error } = await supabase.from(TABLES.channels).delete().eq("id", pendingDelete.id);
+      if (error) throw error;
+      setPendingDelete(null);
+      setDeleteError("");
+      onChanged();
+    } catch (error) {
+      setDeleteError(error instanceof Error ? error.message : "Could not delete the channel.");
+    }
   };
 
   return (
@@ -77,11 +88,19 @@ export default function ChannelManager({ channels, titles, onChanged }) {
         onSaved={onChanged}
       />
 
-      <AlertDialog open={!!pendingDelete} onOpenChange={(open) => !open && setPendingDelete(null)}>
+      <AlertDialog open={!!pendingDelete} onOpenChange={(open) => {
+        if (!open) {
+          setPendingDelete(null);
+          setDeleteError("");
+        }
+      }}>
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>Delete #{pendingDelete?.name}?</AlertDialogTitle>
-            <AlertDialogDescription>Its messages stay in the database but the channel disappears from everyone's list.</AlertDialogDescription>
+            <AlertDialogDescription>
+              Its messages stay in the database but the channel disappears from everyone's list.
+              {deleteError && <span className="mt-2 block text-destructive">{deleteError}</span>}
+            </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>Cancel</AlertDialogCancel>
