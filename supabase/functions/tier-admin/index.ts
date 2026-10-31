@@ -331,22 +331,31 @@ Deno.serve(async (request) => {
         .maybeSingle();
       if (targetNameError) throw targetNameError;
       const targetName = targetNameRow?.display_name || target.full_name || target.user_email || "Member";
-      const { data: targetAuth, error: targetAuthError } = await db.auth.admin.getUserById(target.user_id);
-      if (targetAuthError) throw targetAuthError;
-      if (!targetAuth.user) return fail("The user account could not be found.", 404);
+      // Restored Base44 memberships may use non-UUID IDs and have no Supabase
+      // Auth user. Only ask Auth to delete IDs that can actually identify one.
+      const hasAuthUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(target.user_id);
+      let hasAuthAccount = false;
+      if (hasAuthUuid) {
+        const { data: targetAuth, error: targetAuthError } = await db.auth.admin.getUserById(target.user_id);
+        if (targetAuthError && targetAuthError.status !== 404) throw targetAuthError;
+        hasAuthAccount = Boolean(targetAuth?.user);
+        if (hasAuthAccount) {
+          const { error: deleteAuthError } = await db.auth.admin.deleteUser(target.user_id);
+          if (deleteAuthError) throw deleteAuthError;
+        }
+      }
 
-      // Delete the Auth account only after verifying Founder and target state.
       // Keep historical chat messages, but remove the live membership/profile.
-      const { error: deleteAuthError } = await db.auth.admin.deleteUser(target.user_id);
-      if (deleteAuthError) throw deleteAuthError;
       const { error: nameError } = await db.from("MemberName").delete().eq("user_id", target.user_id);
       if (nameError) throw nameError;
       const { error: membershipError } = await db.from("Membership").delete().eq("id", target.id);
       if (membershipError) throw membershipError;
       const { error: noticeError } = await db.from("NoticeBoard").insert({
         kind: "announcement",
-        title: "User account deleted",
-        body: `${targetName}'s CircleSync account was deleted by ${myName}.`,
+        title: hasAuthAccount ? "User account deleted" : "Orphaned chat membership removed",
+        body: hasAuthAccount
+          ? `${targetName}'s CircleSync account was deleted by ${myName}.`
+          : `${targetName}'s orphaned chat membership was removed by ${myName}.`,
         actor_id: user.id,
         actor_name: myName,
         affected_user_id: target.user_id,
@@ -354,7 +363,7 @@ Deno.serve(async (request) => {
       });
       if (noticeError) throw noticeError;
 
-      return json({ removed: true, targetUserId: target.user_id });
+      return json({ removed: true, hadAuthAccount: hasAuthAccount, targetUserId: target.user_id });
     }
 
     if (action === "assignTiers") {
