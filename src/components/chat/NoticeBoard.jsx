@@ -203,7 +203,9 @@ export default function NoticeBoard({ isAdmin, onOpenSidebar }) {
         setNotices((current) => [data.notice, ...current.filter((entry) => entry.id !== pendingRemoval.id && entry.id !== data.notice?.id)]);
         setRemovalMessage("The announcement was removed. A permanent approval record was added to the Notice Board.");
       } else if (data?.request) {
-        setRemovalMessage("Removal request sent. The announcement will be removed after all Admins agree or a Founder approves it.");
+        setRemovalMessage(data.awaitingFounder
+          ? "Removal request sent to the Founder. There is no other Admin available to approve it."
+          : "Removal request sent. All other Admins must agree, or a Founder may approve it immediately.");
       } else {
         throw new Error("The removal request could not be submitted.");
       }
@@ -359,7 +361,7 @@ export default function NoticeBoard({ isAdmin, onOpenSidebar }) {
           <AlertDialogHeader>
             <AlertDialogTitle>Request announcement removal?</AlertDialogTitle>
             <AlertDialogDescription>
-              “{pendingRemoval?.title || "Announcement"}” will be removed after every Admin agrees or a Founder approves. A permanent removal record will remain on the Notice Board.
+              “{pendingRemoval?.title || "Announcement"}” will be removed after all other Admins agree, or a Founder approves it immediately. A permanent removal record will remain on the Notice Board.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

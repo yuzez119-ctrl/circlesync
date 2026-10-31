@@ -86,7 +86,7 @@ export default function AdminPage() {
             />
           </TabsContent>
           <TabsContent value="requests" className="mt-6">
-            <ApprovalsPanel isFounder={isFounder} />
+            <ApprovalsPanel isFounder={isFounder} currentUserId={me.id} />
           </TabsContent>
           <TabsContent value="channels" className="mt-6">
             <ChannelManager channels={channels} titles={titles} onChanged={() => load(false)} />

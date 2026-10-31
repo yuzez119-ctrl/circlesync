@@ -45,7 +45,11 @@ export default function MemberManager({ members, titles, displayNames, memberTie
       if (error) throw error;
       if (data.applied) setNotice("Tiers updated.");
       else if (data.awaitingFounder)
+        setNotice("Sent to the Founder. Only the Founder can approve this request because there is no other Admin available.");
+      else if (data.request?.kind === "promotion")
         setNotice("Sent to the Founder — only a Founder can make someone an admin.");
+      else if (data.request)
+        setNotice("Tier change request sent. It will take effect after all other Admins agree or a Founder approves it.");
       await onChanged();
     } catch (err) {
       setError(err?.response?.data?.error || err.message || "That change was not allowed.");
@@ -137,7 +141,7 @@ export default function MemberManager({ members, titles, displayNames, memberTie
                   <label key={tier.id} className="flex items-center gap-2 text-sm">
                     <Checkbox
                       checked={held.includes(tier.id)}
-                      disabled={busyId === member.id}
+                      disabled={busyId === member.id || (!isFounder && member.user_id === currentUserId)}
                       onCheckedChange={(checked) => assign(member, tier.id, checked === true)}
                     />
                     <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: tier.color }} />

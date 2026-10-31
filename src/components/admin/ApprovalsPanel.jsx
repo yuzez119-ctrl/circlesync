@@ -17,7 +17,7 @@ async function errorMessage(error) {
   return error?.message || "That did not work.";
 }
 
-export default function ApprovalsPanel({ isFounder }) {
+export default function ApprovalsPanel({ isFounder, currentUserId }) {
   const [requests, setRequests] = useState([]);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(null);
@@ -70,9 +70,9 @@ export default function ApprovalsPanel({ isFounder }) {
   return (
     <div className="space-y-4">
       <p className="max-w-2xl text-sm text-muted-foreground">
-        Member-tier and announcement-removal requests go live after every Admin agrees, or immediately when a
-        Founder approves. Admin tier-structure changes follow the same approval rule. Only a Founder can approve
-        promotions to Admin.
+        Member tier requests need every Admin's agreement, or a Founder may approve immediately. Changes proposed
+        by an Admin need agreement from the other Admins; their proposer cannot approve their own request. A Founder
+        may approve any request immediately. Only a Founder can approve promotions to Admin.
       </p>
 
       {notice && (
@@ -83,6 +83,7 @@ export default function ApprovalsPanel({ isFounder }) {
       <div className="divide-y divide-border overflow-hidden rounded-2xl border border-border bg-card/40">
         {requests.map((request) => {
           const founderOnly = request.kind === "promotion" && !isFounder;
+          const submittedByMe = request.proposed_by === currentUserId && !isFounder;
           const approvals = request.approvals || [];
           return (
             <div key={request.id} className="space-y-3 px-4 py-4">
@@ -105,6 +106,8 @@ export default function ApprovalsPanel({ isFounder }) {
 
               {founderOnly ? (
                 <p className="text-xs text-muted-foreground">Waiting on the Founder.</p>
+              ) : submittedByMe ? (
+                <p className="text-xs text-muted-foreground">Another Admin or the Founder must approve your request.</p>
               ) : (
                 <div className="flex gap-2">
                   <Button

@@ -60,7 +60,7 @@ export default function MemberTierRequestDialog({ open, onOpenChange, titles, cu
         <DialogHeader>
           <DialogTitle>Request member tier change</DialogTitle>
           <DialogDescription>
-            Choose the member tiers you want. Admin and Founder tiers cannot be requested here; an Admin must agree, or a Founder may approve.
+            Choose the member tiers you want. Admin and Founder tiers cannot be requested here; every Admin must agree, or a Founder may approve immediately.
           </DialogDescription>
         </DialogHeader>
         <form onSubmit={submit} className="space-y-4">

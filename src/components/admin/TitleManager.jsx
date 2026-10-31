@@ -92,11 +92,11 @@ export default function TitleManager({ titles, isFounder, onChanged }) {
         },
       });
       if (error) throw error;
-      setNotice(
-        data.applied
-          ? "Tier saved."
-          : "Put to the other admins — it goes live once they all agree, or as soon as a Founder applies it."
-      );
+      setNotice(data.applied
+        ? "Tier saved."
+        : data.awaitingFounder
+          ? "Sent to the Founder. There is no other Admin available to approve this request."
+          : "Sent to the other Admins — it goes live once they all agree, or as soon as a Founder approves it.");
       cancel();
       await onChanged();
     } catch (err) {
@@ -118,7 +118,8 @@ export default function TitleManager({ titles, isFounder, onChanged }) {
       });
       if (error) throw error;
       if (data.applied) setNotice("Tier deleted.");
-      else setNotice("Removing that tier is with the other admins for agreement.");
+      else if (data.awaitingFounder) setNotice("Sent to the Founder. There is no other Admin available to approve this request.");
+      else setNotice("Removing that tier is with the other Admins for agreement.");
       if (editing?.id === target.id) cancel();
       setPendingDelete(null);
       await onChanged();

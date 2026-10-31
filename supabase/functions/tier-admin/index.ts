@@ -140,7 +140,10 @@ Deno.serve(async (request) => {
     if (nameLookupError) throw nameLookupError;
     const myName = nameRow?.display_name || member?.full_name || member?.user_email || user.user_metadata?.full_name || user.email || "An admin";
     const nameOf = (entry: any) => entry?.full_name || entry?.user_email || "A member";
-    const adminIds = rows.filter((entry) => tiersOf(entry).some((tier: any) => tier.tier_type === ADMIN)).map((entry) => entry.user_id);
+    const adminIds = [...new Set(rows
+      .filter((entry) => tiersOf(entry).some((tier: any) => tier.tier_type === ADMIN))
+      .map((entry) => entry.user_id))];
+    const otherAdminIds = adminIds.filter((id) => id !== user.id);
     const writeTiers = async (target: any, ids: string[], actorName = myName) => {
       const clean = [...new Set(ids)].filter((id) => titlesById[id]);
       const { error } = await db.rpc("apply_member_tiers_with_notice", {
@@ -182,7 +185,18 @@ Deno.serve(async (request) => {
       }
       if (tierRequest.kind === "promotion" || tierRequest.kind === "assignment") {
         const target = rows.find((entry) => entry.user_id === payload.targetUserId);
-        if (target) await writeTiers(target, payload.tierIds || [], actorName);
+        if (!target) throw new Error("The member no longer exists.");
+        const requestedIds = Array.isArray(payload.tierIds) ? [...new Set(payload.tierIds)] : [];
+        if (requestedIds.some((id: string) => !titlesById[id])) throw new Error("A selected tier no longer exists.");
+        if (tierRequest.kind === "assignment") {
+          if (requestedIds.some((id: string) => (titlesById[id]?.tier_type || STANDARD) !== STANDARD)) {
+            throw new Error("Admin assignments may only change member tiers.");
+          }
+          if (tiersOf(target).some((tier: any) => tier.tier_type === ADMIN || tier.tier_type === FOUNDER)) {
+            throw new Error("Admin assignments cannot change an Admin or Founder membership.");
+          }
+        }
+        await writeTiers(target, requestedIds, actorName);
         return;
       }
       if (tierRequest.kind === "notice_delete") {
@@ -283,7 +297,7 @@ Deno.serve(async (request) => {
       const request = await propose("notice_delete", `Remove the announcement “${notice.title || "Announcement"}”`, {
         noticeId: notice.id,
       });
-      if (!founder) return json({ applied: false, request });
+      if (!founder) return json({ applied: false, awaitingFounder: otherAdminIds.length === 0, request });
 
       const { data: removed, error: removeError } = await db.rpc("delete_approved_notice", {
         _notice_id: notice.id,
@@ -376,12 +390,18 @@ Deno.serve(async (request) => {
       const nextFounder = nextIds.some((id) => titlesById[id]?.tier_type === FOUNDER);
       const nextAdmin = nextIds.some((id) => titlesById[id]?.tier_type === ADMIN);
       if (!founder) {
+        if (target.user_id === user.id) return fail("Admins cannot change their own tiers.", 403);
         if (targetFounder || nextFounder) return fail("Only a Founder can change the Founder tier.", 403);
         if (targetAdmin) return fail("Only a Founder can change another admin's tiers.", 403);
         if (nextAdmin) {
           const change = await propose("promotion", `Make ${nameOf(target)} an admin`, { targetUserId: target.user_id, tierIds: nextIds });
           return json({ applied: false, awaitingFounder: true, request: change });
         }
+        const change = await propose("assignment", `Change ${nameOf(target)}'s member tiers`, {
+          targetUserId: target.user_id,
+          tierIds: nextIds,
+        });
+        return json({ applied: false, awaitingFounder: otherAdminIds.length === 0, request: change });
       }
       const tierIds = await writeTiers(target, nextIds);
       return json({ applied: true, targetUserId: target.user_id, tierIds });
@@ -408,7 +428,7 @@ Deno.serve(async (request) => {
       const change = await propose("structure", existing ? `Change the tier “${existing.name}”` : `Add a new tier “${name}”`, {
         op: existing ? "update" : "create", id: existing?.id || null, name, color, tier_type: tierType,
       });
-      return json({ applied: false, request: change });
+      return json({ applied: false, awaitingFounder: otherAdminIds.length === 0, request: change });
     }
 
     if (action === "deleteTier") {
@@ -421,7 +441,7 @@ Deno.serve(async (request) => {
       if (!founder) {
         if (tier.tier_type !== STANDARD) return fail("Only a Founder can remove an Admin or Founder tier.", 403);
         const change = await propose("structure", `Delete the tier “${tier.name}”`, { op: "delete", id: tier.id, name: tier.name });
-        return json({ applied: false, request: change });
+        return json({ applied: false, awaitingFounder: otherAdminIds.length === 0, request: change });
       }
       await dropTierFromMembers(tier.id);
       const { error } = await db.from("Title").delete().eq("id", tier.id);
@@ -435,6 +455,7 @@ Deno.serve(async (request) => {
       if (!tierRequest) return fail("That request is gone.", 404);
       if (tierRequest.status !== "pending") return fail("That request has already been decided.");
       if (tierRequest.kind === "promotion" && !founder) return fail("Only a Founder can decide on making someone an admin.", 403);
+      if (!founder && tierRequest.proposed_by === user.id) return fail("You cannot approve your own request.", 403);
       if (body.decision === "reject") {
         const { data, error: updateError } = await db.from("TierRequest").update({ status: "rejected", resolved_by_name: myName }).eq("id", tierRequest.id).select().single();
         if (updateError) throw updateError;
@@ -446,10 +467,14 @@ Deno.serve(async (request) => {
         if (updateError) throw updateError;
         return json({ status: "applied", applied: true, request: data });
       }
-      const approvals = Array.isArray(tierRequest.approvals) ? [...tierRequest.approvals] : [];
+      const required = adminIds.filter((id) => id !== tierRequest.proposed_by);
+      const approvals = (Array.isArray(tierRequest.approvals) ? [...tierRequest.approvals] : [])
+        .filter((entry: any) => required.includes(entry.user_id));
       if (!approvals.some((entry: any) => entry.user_id === user.id)) approvals.push({ user_id: user.id, name: myName, at: new Date().toISOString() });
-      const required = adminIds.filter((id) => id !== tierRequest.proposed_by && id !== user.id);
       const waiting = required.filter((id) => !approvals.some((entry: any) => entry.user_id === id));
+      if (required.length === 0) {
+        return json({ status: "pending", waiting: 0, awaitingFounder: true, request: tierRequest });
+      }
       if (waiting.length === 0) {
         await applyRequest(tierRequest, "全体Admin");
         const { data, error: updateError } = await db.from("TierRequest").update({ status: "applied", approvals, resolved_by_name: myName }).eq("id", tierRequest.id).select().single();
