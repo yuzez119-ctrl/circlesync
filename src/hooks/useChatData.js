@@ -15,6 +15,7 @@ export default function useChatData() {
   const [channels, setChannels] = useState(/** @type {any[]} */ ([]));
   const [members, setMembers] = useState(/** @type {any[]} */ ([]));
   const [displayNames, setDisplayNames] = useState(/** @type {Record<string, string>} */ ({}));
+  const [chatName, setChatName] = useState("CircleSync");
   const [loadError, setLoadError] = useState("");
 
   const load = useCallback(async (showSpinner = true, joinedMembership = /** @type {any} */ (null)) => {
@@ -32,6 +33,7 @@ export default function useChatData() {
         setChannels([]);
         setMembers([]);
         setDisplayNames({});
+        setChatName("CircleSync");
         return null;
       }
 
@@ -77,16 +79,18 @@ export default function useChatData() {
         setChannels([]);
         setMembers([]);
         setDisplayNames({});
+        setChatName("CircleSync");
         return null;
       }
 
-      const [titleResult, channelResult, memberResult, nameResult] = await Promise.all([
+      const [titleResult, channelResult, memberResult, nameResult, chatSettingsResult] = await Promise.all([
         supabase.from(TABLES.titles).select("*").order("created_date"),
         supabase.from(TABLES.channels).select("*").order("created_date").limit(200),
         supabase.from(TABLES.memberships).select("*").order("full_name").limit(200),
         supabase.from(TABLES.memberNames).select("*").limit(200),
+        supabase.from(TABLES.chatSettings).select("name").eq("id", "main").maybeSingle(),
       ]);
-      for (const result of [titleResult, channelResult, memberResult, nameResult]) {
+      for (const result of [titleResult, channelResult, memberResult, nameResult, chatSettingsResult]) {
         if (result.error) throw result.error;
       }
 
@@ -108,6 +112,7 @@ export default function useChatData() {
       setChannels(channelResult.data || []);
       setMembers(memberResult.data || []);
       setDisplayNames(names);
+      setChatName(chatSettingsResult.data?.name?.trim() || "CircleSync");
       const memberRows = memberResult.data || [];
       const myMembership = memberRows.find((member) => member.user_id === user.id) || activeMembership;
       const titleById = Object.fromEntries((titleResult.data || []).map((title) => [title.id, title]));
@@ -131,6 +136,16 @@ export default function useChatData() {
   }, []);
 
   useEffect(() => {
+    const channel = supabase
+      .channel("shared-chat-name")
+      .on("postgres_changes", { event: "UPDATE", schema: "public", table: TABLES.chatSettings }, ({ new: settings }) => {
+        setChatName(settings.name?.trim() || "CircleSync");
+      })
+      .subscribe();
+    return () => { supabase.removeChannel(channel); };
+  }, []);
+
+  useEffect(() => {
     load();
   }, [load]);
 
@@ -144,6 +159,7 @@ export default function useChatData() {
     channels,
     members,
     displayNames,
+    chatName,
     loadError,
     memberTiers,
     myTiers: memberTiers[me?.id] || [],

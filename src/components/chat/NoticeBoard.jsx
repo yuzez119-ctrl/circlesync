@@ -21,18 +21,22 @@ import {
 
 const PAGE_SIZE = 50;
 const MAX_ATTACHMENTS = 10;
+const EMPTY_VISIBILITY = Object.freeze({});
 
 function sortNotices(entries) {
   return [...entries].sort((left, right) => Number(!!right.is_pinned) - Number(!!left.is_pinned)
     || new Date(right.created_date).getTime() - new Date(left.created_date).getTime());
 }
 
-function positionsLabel(positions) {
-  if (!Array.isArray(positions) || positions.length === 0) return "No tier";
-  return positions.map((position) => position.name).filter(Boolean).join(", ") || "No tier";
+function positionsLabel(positions, hideFounder) {
+  const visiblePositions = hideFounder && Array.isArray(positions)
+    ? positions.filter((position) => position.tier_type !== "founder")
+    : positions;
+  if (!Array.isArray(visiblePositions) || visiblePositions.length === 0) return "No tier";
+  return visiblePositions.map((position) => position.name).filter(Boolean).join(", ") || "No tier";
 }
 
-export default function NoticeBoard({ isAdmin, onOpenSidebar }) {
+export default function NoticeBoard({ isAdmin, founderVisibilityByUserId = EMPTY_VISIBILITY, onOpenSidebar }) {
   const [notices, setNotices] = useState([]);
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
@@ -76,7 +80,7 @@ export default function NoticeBoard({ isAdmin, onOpenSidebar }) {
 
   useEffect(() => {
     loadInitial();
-  }, [loadInitial]);
+  }, [loadInitial, founderVisibilityByUserId]);
 
   useEffect(() => {
     const channel = supabase
@@ -312,10 +316,10 @@ export default function NoticeBoard({ isAdmin, onOpenSidebar }) {
                   <div className="mt-2 whitespace-pre-wrap break-words text-sm leading-relaxed">{notice.body}</div>
                 ) : (
                   <div className="mt-2 space-y-2 text-sm">
-                    <p><span className="text-muted-foreground">By</span> {notice.actor_name} <span className="text-muted-foreground">· for</span> {notice.affected_user_name || "a member"}</p>
+                    <p><span className="text-muted-foreground">By</span> {founderVisibilityByUserId[notice.actor_id] === false ? "Admin" : notice.actor_name} <span className="text-muted-foreground">· for</span> {notice.affected_user_name || "a member"}</p>
                     <div className="grid gap-2 text-xs sm:grid-cols-2">
-                      <p className="rounded-lg bg-background/70 px-3 py-2"><span className="text-muted-foreground">Before:</span> {positionsLabel(notice.before_positions)}</p>
-                      <p className="rounded-lg bg-background/70 px-3 py-2"><span className="text-muted-foreground">After:</span> {positionsLabel(notice.after_positions)}</p>
+                      <p className="rounded-lg bg-background/70 px-3 py-2"><span className="text-muted-foreground">Before:</span> {positionsLabel(notice.before_positions, founderVisibilityByUserId[notice.affected_user_id] === false)}</p>
+                      <p className="rounded-lg bg-background/70 px-3 py-2"><span className="text-muted-foreground">After:</span> {positionsLabel(notice.after_positions, founderVisibilityByUserId[notice.affected_user_id] === false)}</p>
                     </div>
                   </div>
                 )}
@@ -324,7 +328,7 @@ export default function NoticeBoard({ isAdmin, onOpenSidebar }) {
 
                 {(notice.kind === "announcement" || notice.kind === "notice_removal") && (
                   <div className="mt-3 flex items-center justify-between gap-3">
-                    <p className="text-xs text-muted-foreground">{notice.kind === "announcement" ? "Posted by" : "Removal approved by"} {notice.actor_name}</p>
+                    <p className="text-xs text-muted-foreground">{notice.kind === "announcement" ? "Posted by" : "Removal approved by"} {founderVisibilityByUserId[notice.actor_id] === false ? "Admin" : notice.actor_name}</p>
                     {isAdmin && notice.kind === "announcement" && (
                       <div className="flex items-center gap-1">
                         <Button type="button" variant="ghost" size="sm" onClick={() => togglePinned(notice)} disabled={pinningNoticeId === notice.id} className="h-8 gap-1.5 text-muted-foreground">

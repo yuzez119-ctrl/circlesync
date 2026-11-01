@@ -67,4 +67,6 @@ The Notice Board and Founder title visibility preference are in `supabase/migrat
 
 `supabase/migrations/20261030145806_notice_pinning_and_attachments.sql` adds single-Admin announcement pinning and private Notice Board attachments. Chat members can read published attachments; only Admins can upload them.
 
+`supabase/migrations/20261101141403_hide_founder_badges_and_set_chat_name.sql` makes hidden Founder titles disappear from member badges and public Notice Board history, and adds the shared chat name setting. On the restored CamelCase production schema, apply this incremental migration directly before deploying `tier-admin` and the frontend. Chat name changes are available to Admins and Founders in the Admin area.
+
 Supabase free-plan limits and availability are determined by Supabase and may change; review the current plan limits before relying on it for production.

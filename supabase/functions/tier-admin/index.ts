@@ -81,6 +81,17 @@ Deno.serve(async (request) => {
     const founder = tiersOf(member).some((tier: any) => tier.tier_type === FOUNDER);
     const admin = founder || tiersOf(member).some((tier: any) => tier.tier_type === ADMIN);
 
+    if (action === "setFounderTitleVisibility") {
+      if (!founder) return fail("Only a Founder can change this preference.", 403);
+      if (typeof body.show !== "boolean") return fail("Choose whether to show the Founder title.");
+      const { error } = await db.rpc("set_founder_title_visibility", {
+        _founder_user_id: user.id,
+        _show: body.show,
+      });
+      if (error) throw error;
+      return json({ show: body.show });
+    }
+
     if (action === "requestOwnMemberTiers") {
       if (!member) return fail("Join the chat before requesting a tier change.", 403);
       if (admin) return fail("Member-tier requests are for regular members.", 403);
@@ -139,12 +150,13 @@ Deno.serve(async (request) => {
       .maybeSingle();
     if (nameLookupError) throw nameLookupError;
     const myName = nameRow?.display_name || member?.full_name || member?.user_email || user.user_metadata?.full_name || user.email || "An admin";
+    const actorDisplayName = founder && member?.show_founder_title === false ? "Admin" : myName;
     const nameOf = (entry: any) => entry?.full_name || entry?.user_email || "A member";
     const adminIds = [...new Set(rows
       .filter((entry) => tiersOf(entry).some((tier: any) => tier.tier_type === ADMIN))
       .map((entry) => entry.user_id))];
     const otherAdminIds = adminIds.filter((id) => id !== user.id);
-    const writeTiers = async (target: any, ids: string[], actorName = myName) => {
+    const writeTiers = async (target: any, ids: string[], actorName = actorDisplayName) => {
       const clean = [...new Set(ids)].filter((id) => titlesById[id]);
       const { error } = await db.rpc("apply_member_tiers_with_notice", {
         _target_user_id: target.user_id,
@@ -155,19 +167,19 @@ Deno.serve(async (request) => {
       if (error) throw error;
       return clean;
     };
-    const dropTierFromMembers = async (tierId: string, actorName = myName) => {
+    const dropTierFromMembers = async (tierId: string, actorName = actorDisplayName) => {
       for (const target of rows.filter((entry) => (entry.title_ids || []).includes(tierId))) {
         await writeTiers(target, target.title_ids.filter((id: string) => id !== tierId), actorName);
       }
     };
     const propose = async (kind: string, summary: string, payload: object) => {
       const { data, error } = await db.from("TierRequest").insert({
-        kind, summary, payload, proposed_by: user.id, proposed_by_name: myName, status: "pending", approvals: [],
+        kind, summary, payload, proposed_by: user.id, proposed_by_name: actorDisplayName, status: "pending", approvals: [],
       }).select().single();
       if (error) throw error;
       return data;
     };
-    const applyRequest = async (tierRequest: any, actorName = myName) => {
+    const applyRequest = async (tierRequest: any, actorName = actorDisplayName) => {
       const payload = tierRequest.payload || {};
       if (tierRequest.kind === "member_tier_change") {
         if (payload.targetUserId !== tierRequest.proposed_by) {
@@ -255,7 +267,7 @@ Deno.serve(async (request) => {
         body: message,
         attachments,
         actor_id: user.id,
-        actor_name: myName,
+        actor_name: actorDisplayName,
       }).select().single();
       if (error) throw error;
       return json({ notice });
@@ -303,11 +315,11 @@ Deno.serve(async (request) => {
         _notice_id: notice.id,
         _request_id: String(request.id),
         _actor_id: user.id,
-        _actor_name: myName,
+        _actor_name: actorDisplayName,
       });
       if (removeError) throw removeError;
       const { data: appliedRequest, error: updateError } = await db.from("TierRequest")
-        .update({ status: "applied", resolved_by_name: myName })
+        .update({ status: "applied", resolved_by_name: actorDisplayName })
         .eq("id", request.id)
         .select()
         .single();
@@ -368,10 +380,10 @@ Deno.serve(async (request) => {
         kind: "announcement",
         title: hasAuthAccount ? "User account deleted" : "Orphaned chat membership removed",
         body: hasAuthAccount
-          ? `${targetName}'s CircleSync account was deleted by ${myName}.`
-          : `${targetName}'s orphaned chat membership was removed by ${myName}.`,
+          ? `${targetName}'s CircleSync account was deleted by ${actorDisplayName}.`
+          : `${targetName}'s orphaned chat membership was removed by ${actorDisplayName}.`,
         actor_id: user.id,
-        actor_name: myName,
+        actor_name: actorDisplayName,
         affected_user_id: target.user_id,
         affected_user_name: targetName,
       });
@@ -457,27 +469,27 @@ Deno.serve(async (request) => {
       if (tierRequest.kind === "promotion" && !founder) return fail("Only a Founder can decide on making someone an admin.", 403);
       if (!founder && tierRequest.proposed_by === user.id) return fail("You cannot approve your own request.", 403);
       if (body.decision === "reject") {
-        const { data, error: updateError } = await db.from("TierRequest").update({ status: "rejected", resolved_by_name: myName }).eq("id", tierRequest.id).select().single();
+        const { data, error: updateError } = await db.from("TierRequest").update({ status: "rejected", resolved_by_name: actorDisplayName }).eq("id", tierRequest.id).select().single();
         if (updateError) throw updateError;
         return json({ status: "rejected", request: data });
       }
       if (tierRequest.kind === "promotion" || founder) {
         await applyRequest(tierRequest);
-        const { data, error: updateError } = await db.from("TierRequest").update({ status: "applied", resolved_by_name: myName }).eq("id", tierRequest.id).select().single();
+        const { data, error: updateError } = await db.from("TierRequest").update({ status: "applied", resolved_by_name: actorDisplayName }).eq("id", tierRequest.id).select().single();
         if (updateError) throw updateError;
         return json({ status: "applied", applied: true, request: data });
       }
       const required = adminIds.filter((id) => id !== tierRequest.proposed_by);
       const approvals = (Array.isArray(tierRequest.approvals) ? [...tierRequest.approvals] : [])
         .filter((entry: any) => required.includes(entry.user_id));
-      if (!approvals.some((entry: any) => entry.user_id === user.id)) approvals.push({ user_id: user.id, name: myName, at: new Date().toISOString() });
+      if (!approvals.some((entry: any) => entry.user_id === user.id)) approvals.push({ user_id: user.id, name: actorDisplayName, at: new Date().toISOString() });
       const waiting = required.filter((id) => !approvals.some((entry: any) => entry.user_id === id));
       if (required.length === 0) {
         return json({ status: "pending", waiting: 0, awaitingFounder: true, request: tierRequest });
       }
       if (waiting.length === 0) {
         await applyRequest(tierRequest, "全体Admin");
-        const { data, error: updateError } = await db.from("TierRequest").update({ status: "applied", approvals, resolved_by_name: myName }).eq("id", tierRequest.id).select().single();
+        const { data, error: updateError } = await db.from("TierRequest").update({ status: "applied", approvals, resolved_by_name: actorDisplayName }).eq("id", tierRequest.id).select().single();
         if (updateError) throw updateError;
         return json({ status: "applied", applied: true, request: data });
       }

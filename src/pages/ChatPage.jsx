@@ -29,6 +29,7 @@ export default function ChatPage() {
     channels,
     members,
     displayNames,
+    chatName,
     loadError,
     memberTiers,
     myTiers,
@@ -69,11 +70,16 @@ export default function ChatPage() {
   const visibleMemberTiers = useMemo(() => Object.fromEntries(
     Object.entries(memberTiers).map(([userId, tiers]) => [
       userId,
-      userId === me?.id || members.find((member) => member.user_id === userId)?.show_founder_title !== false
+      members.find((member) => member.user_id === userId)?.show_founder_title !== false
         ? tiers
         : tiers.filter((tier) => tier.tier_type !== "founder"),
     ])
-  ), [memberTiers, members, me?.id]);
+  ), [memberTiers, members]);
+  const visibleMyTiers = visibleMemberTiers[me?.id] || [];
+  const founderVisibilityByUserId = useMemo(
+    () => Object.fromEntries(members.map((member) => [member.user_id, member.show_founder_title !== false])),
+    [members]
+  );
 
   useEffect(() => {
     if (!membership || !activeChannelId) {
@@ -210,13 +216,11 @@ export default function ChatPage() {
     setFounderTitleSaving(true);
     setFounderTitleError("");
     try {
-      const { data, error } = await supabase.from(TABLES.memberships)
-        .update({ show_founder_title: show })
-        .eq("user_id", me.id)
-        .select("user_id")
-        .maybeSingle();
+      const { data, error } = await supabase.functions.invoke("tier-admin", {
+        body: { action: "setFounderTitleVisibility", show },
+      });
       if (error) throw error;
-      if (!data) throw new Error("Only a Founder can change this setting.");
+      if (data?.show !== show) throw new Error("Only a Founder can change this setting.");
       await load(false);
     } catch (error) {
       setFounderTitleError(error?.message || "Could not update Founder title visibility.");
@@ -340,7 +344,7 @@ export default function ChatPage() {
 
   const sidebar = (
     <Sidebar
-      appName="Campfire"
+      appName={chatName}
       channels={visible}
       activeChannelId={activeThreadId ? null : activeChannelId}
       onSelectChannel={selectChannel}
@@ -354,7 +358,7 @@ export default function ChatPage() {
       me={membership}
       displayNames={displayNames}
       memberTiers={visibleMemberTiers}
-      myTiers={myTiers}
+      myTiers={visibleMyTiers}
       isFounder={isFounder}
       showFounderTitle={membership.show_founder_title !== false}
       onFounderTitleVisibilityChange={setFounderTitleVisibility}
@@ -393,7 +397,11 @@ export default function ChatPage() {
 
       <div className="relative flex min-w-0 flex-1">
         {activeView === "notices" ? (
-          <NoticeBoard isAdmin={isAdmin} onOpenSidebar={() => setSidebarOpen(true)} />
+        <NoticeBoard
+          isAdmin={isAdmin}
+          founderVisibilityByUserId={founderVisibilityByUserId}
+          onOpenSidebar={() => setSidebarOpen(true)}
+        />
         ) : <ChatPane
           channel={activeThreadId ? null : activeChannel}
           thread={activeThread}

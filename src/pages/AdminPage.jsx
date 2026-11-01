@@ -10,6 +10,7 @@ import MemberManager from "@/components/admin/MemberManager";
 import ChannelManager from "@/components/admin/ChannelManager";
 import ApprovalsPanel from "@/components/admin/ApprovalsPanel";
 import JoinCodeCard from "@/components/admin/JoinCodeCard";
+import ChatNameCard from "@/components/admin/ChatNameCard";
 
 export default function AdminPage() {
   const navigate = useNavigate();
@@ -25,6 +26,7 @@ export default function AdminPage() {
     displayNames,
     memberTiers,
     myTiers,
+    chatName,
     load,
   } = useChatData();
 
@@ -37,6 +39,8 @@ export default function AdminPage() {
   }
 
   const isFounder = me?.role === "admin";
+  const showFounderTitle = membership?.show_founder_title !== false;
+  const displayFounderRole = isFounder && showFounderTitle;
   const amAdmin = hasTierType(myTiers, "admin");
   const isAuthorized = Boolean(me && (isFounder || amAdmin) && membership);
 
@@ -55,8 +59,8 @@ export default function AdminPage() {
           </Button>
           <h1 className="font-display text-xl font-semibold tracking-tight">Admin area</h1>
           <span className="inline-flex items-center gap-1.5 rounded-full border border-border px-2.5 py-0.5 text-[11px] text-muted-foreground">
-            {isFounder ? <Crown className="h-3 w-3" /> : <ShieldCheck className="h-3 w-3" />}
-            {isFounder ? "Founder" : "Admin"}
+            {displayFounderRole ? <Crown className="h-3 w-3" /> : <ShieldCheck className="h-3 w-3" />}
+            {displayFounderRole ? "Founder" : "Admin"}
           </span>
         </div>
       </header>
@@ -69,6 +73,7 @@ export default function AdminPage() {
             <TabsTrigger value="requests">Requests</TabsTrigger>
             <TabsTrigger value="channels">Channels</TabsTrigger>
             <TabsTrigger value="join">Join code</TabsTrigger>
+            <TabsTrigger value="chat-name">Chat name</TabsTrigger>
           </TabsList>
 
           <TabsContent value="tiers" className="mt-6">
@@ -93,6 +98,9 @@ export default function AdminPage() {
           </TabsContent>
           <TabsContent value="join" className="mt-6">
             <JoinCodeCard />
+          </TabsContent>
+          <TabsContent value="chat-name" className="mt-6">
+            <ChatNameCard chatName={chatName} onSaved={() => load(false)} />
           </TabsContent>
         </Tabs>
       </main>

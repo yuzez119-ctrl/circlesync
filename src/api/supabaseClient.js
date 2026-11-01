@@ -21,6 +21,7 @@ export const TABLES = Object.freeze({
   readStates: "ReadState",
   directMessages: "DirectMessage",
   appConfig: "AppConfig",
+  chatSettings: "ChatSettings",
   tierRequests: "TierRequest",
   noticeBoard: "NoticeBoard",
 });

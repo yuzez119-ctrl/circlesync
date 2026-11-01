@@ -100,12 +100,15 @@ export default function MemberManager({ members, titles, displayNames, memberTie
       <div className="divide-y divide-border overflow-hidden rounded-2xl border border-border bg-card/40">
         {visibleMembers.map((member) => {
           const tiers = memberTiers?.[member.user_id] || [];
+          const displayTiers = member.show_founder_title === false
+            ? tiers.filter((tier) => tierTypeOf(tier) !== "founder")
+            : tiers;
           const name = displayNameFor(displayNames, member.user_id, member.full_name);
           const held = member.title_ids || [];
           return (
             <div key={member.id} className="space-y-3 px-4 py-4">
               <div className="flex items-center gap-3">
-                <MemberAvatar name={name} color={primaryColor(tiers)} size={34} />
+                <MemberAvatar name={name} color={primaryColor(displayTiers)} size={34} />
                 <div className="min-w-0 flex-1">
                   <div className="truncate font-heading text-sm font-medium">{name}</div>
                   <div className="mt-1">
@@ -138,20 +141,25 @@ export default function MemberManager({ members, titles, displayNames, memberTie
 
               <div className="flex flex-wrap gap-x-4 gap-y-2">
                 {titles.map((tier) => (
-                  <label key={tier.id} className="flex items-center gap-2 text-sm">
-                    <Checkbox
-                      checked={held.includes(tier.id)}
-                      disabled={busyId === member.id || (!isFounder && member.user_id === currentUserId)}
-                      onCheckedChange={(checked) => assign(member, tier.id, checked === true)}
-                    />
-                    <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: tier.color }} />
-                    <span>{tier.name}</span>
-                    {tierTypeOf(tier) !== "standard" && (
-                      <span className="text-[10px] uppercase tracking-wide text-muted-foreground">
-                        {tierTypeOf(tier)}
-                      </span>
-                    )}
-                  </label>
+                  (() => {
+                    const hiddenFounder = tierTypeOf(tier) === "founder" && member.show_founder_title === false;
+                    return (
+                      <label key={tier.id} className="flex items-center gap-2 text-sm">
+                        <Checkbox
+                          checked={!hiddenFounder && held.includes(tier.id)}
+                          disabled={hiddenFounder || busyId === member.id || (!isFounder && member.user_id === currentUserId)}
+                          onCheckedChange={(checked) => assign(member, tier.id, checked === true)}
+                        />
+                        {!hiddenFounder && <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: tier.color }} />}
+                        <span>{hiddenFounder ? "Hidden" : tier.name}</span>
+                        {!hiddenFounder && tierTypeOf(tier) !== "standard" && (
+                          <span className="text-[10px] uppercase tracking-wide text-muted-foreground">
+                            {tierTypeOf(tier)}
+                          </span>
+                        )}
+                      </label>
+                    );
+                  })()
                 ))}
                 {titles.length === 0 && <p className="text-xs text-muted-foreground">No tiers yet.</p>}
               </div>
